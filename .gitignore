@@ -1,0 +1,14 @@
+/build/
+/out/
+/tests/data/
+*.wav
+*.exe
+*.o
+*.a
+__pycache__/
+.vscode/
+.idea/
+compile_commands.json
+/bench/*.log
+/bench/tools/
+/bench/out/
