@@ -1,7 +1,9 @@
 #include "design.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
+#include <thread>
 
 #include "dsp/fft.hpp"
 
@@ -9,24 +11,26 @@ namespace kbsrc::KBSRC_ISA::detail {
 
 using namespace dsp;
 
-namespace {
-
-using LD = long double;
-LD i0l(LD x) { LD q = x * x / 4, s = 1, t = 1; for (int k = 1; k < 1000; k++) { t *= q / ((LD)k * k); s += t; if (t < s * 1e-22L) break; } return s; }
-const LD PIL = 3.141592653589793238462643383279502884L;
-
-}  // namespace
-
-// one-sided taps of the Kaiser-windowed sinc sampled at fk, cutoff fc = (a/b)*fk/2 (a/b reduced)
+// one-sided taps of the Kaiser-windowed sinc sampled at fk, cutoff fc = (a/b)*fk/2 (a/b reduced).
+// Everything is double-double built from IEEE basic operations, so the taps are identical on every platform.
 std::vector<dd> kernel_taps(int L, long long a, long long b, double beta) {
-    std::vector<dd> h(L + 1); LD ib = i0l(beta);
-    for (int n = 0; n <= L; n++) {
-        LD s;
-        if (n == 0) s = 1;
-        else { long long m = (long long)(((__int128)n * a) % (2 * (__int128)b)); s = sinl(PIL * (LD)m / (LD)b) / (PIL * (LD)n * (LD)a / (LD)b); }
-        LD u = (LD)n / L, w = i0l((LD)beta * sqrtl(std::max<LD>(0, 1 - u * u))) / ib;
-        LD v = (LD)a / (LD)b * s * w; double hi = (double)v; h[n] = dd(hi, (double)(v - (LD)hi));
-    }
+    std::vector<dd> h(L + 1); const dd ib = dd_i0(dd(beta)), ab = dd((double)a) / (double)b;
+    auto tap = [&](int n) {
+        dd s(1.0);
+        if (n) {   // sin(pi n a/b) / (pi n a/b), argument reduced exactly: n a mod 2b
+            long long m = (long long)(((__int128)n * a) % (2 * (__int128)b));
+            dd c, sn; dd_cis(m, 2 * b, c, sn);
+            s = sn / (DD_PI * (dd((double)n) * (double)a) / (double)b);
+        }
+        dd u = dd((double)n) / (double)L, w = dd_i0(dd(beta) * dd_sqrt(dd(1.0) - u * u)) / ib;
+        h[n] = ab * s * w;
+    };
+    // taps are independent: split them over threads (the result does not depend on the split)
+    int nt = (int)std::min<long long>(std::max(1u, std::thread::hardware_concurrency()), std::max(1, (L + 1) / 512));
+    std::atomic<int> next(0);
+    auto work = [&]() { for (int c; (c = next.fetch_add(256)) <= L;) for (int n = c; n <= std::min(L, c + 255); n++) tap(n); };
+    std::vector<std::thread> th; for (int i = 1; i < nt; i++) th.emplace_back(work);
+    work(); for (auto& t : th) t.join();
     return h;
 }
 std::vector<dd> kernel(long long fk, long long a, long long b, double T, double beta) { return kernel_taps((int)std::floor(T * (double)fk), a, b, beta); }

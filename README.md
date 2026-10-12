@@ -13,7 +13,7 @@ cmake --preset release
 cmake --build --preset release
 ```
 
-The binary is written to `build/release/kbsrc`. The `release` preset tunes for the build machine. Use `portable` for a binary that runs on any CPU of the same architecture: on x86-64 it contains an AVX2 engine and a generic one and picks at run time. The generic engine is about 1.4x slower in exact mode and 1.15x slower in fast mode (1.85 s vs 1.34 s and 0.75 s vs 0.65 s on the benchmark below). Set `KBSRC_CPU=generic` to force it. Both engines give bit-identical output. Other compilers or platforms (such as ARM64) can differ by an ULP or two, below -300 dBFS, because `long double` and the maths library differ. On Windows, [w64devkit](https://github.com/skeeto/w64devkit) works out of the box and produces a static `kbsrc.exe`.
+The binary is written to `build/release/kbsrc`. The `release` preset tunes for the build machine. Use `portable` for a binary that runs on any CPU of the same architecture: on x86-64 it contains an AVX2 engine and a generic one and picks at run time. The generic engine is about 1.4x slower in exact mode and 1.15x slower in fast mode (1.85 s vs 1.33 s and 0.75 s vs 0.67 s on the benchmark below). Set `KBSRC_CPU=generic` to force it. Output is bit-identical across engines, thread counts, compilers and platforms (checked with MinGW GCC on Windows, GCC and Clang on Linux, and ARM64), because every step uses only IEEE basic operations. On Windows, [w64devkit](https://github.com/skeeto/w64devkit) works out of the box and produces a static `kbsrc.exe`.
 
 ## Usage
 
@@ -40,17 +40,17 @@ All runs were done on one machine (Ryzen 7 5800H, Windows 11). Quality is the Hy
 
 | Resampler | Version | Settings | Threads | Score | Time |
 |---|---|---|---|---|---|
-| kbsrc | 1.2.0 | `--mode exact` | 8 | 99.93 | 1.40 s |
-| kbsrc | 1.2.0 | `--mode exact -t 1` | 1 | 99.93 | 4.21 s |
-| kbsrc | 1.2.0 | `--mode fast` | 4 | 99.87 | 0.67 s |
-| kbsrc | 1.2.0 | `--mode fast -t 1` | 1 | 99.87 | 0.83 s |
-| ardftsrc-rs | 0.3.1 | Insane, f64 | default | 99.74 | 2.46 s |
+| kbsrc | 1.2.2 | `--mode exact` | 8 | 99.93 | 1.33 s |
+| kbsrc | 1.2.2 | `--mode exact -t 1` | 1 | 99.93 | 4.33 s |
+| kbsrc | 1.2.2 | `--mode fast` | 4 | 99.87 | 0.67 s |
+| kbsrc | 1.2.2 | `--mode fast -t 1` | 1 | 99.87 | 0.83 s |
+| ardftsrc-rs | 0.3.1 | Insane, f64 | default | 99.74 | 2.47 s |
 | ardftsrc-rs | 0.3.1 | Insane, double-double | default | 99.92 | 31.1 s |
-| soxr | 0.1.3 | `SOXR_32_BITQ`, linear phase, 99.5% | 1 | 82.56 | 0.78 s |
-| soxr | 0.1.3 | `SOXR_VHQ`, linear phase, 99.5% | 1 | 81.88 | 0.74 s |
+| soxr | 0.1.3 | `SOXR_32_BITQ`, linear phase, 99.5% | 1 | 82.56 | 0.69 s |
+| soxr | 0.1.3 | `SOXR_VHQ`, linear phase, 99.5% | 1 | 81.88 | 0.68 s |
 | SoX | 14.4.2 | `rate -v -L -b 99.5` | 1 | 72.71 | 1.30 s |
-| libsamplerate | 0.2.2 | `SRC_SINC_BEST_QUALITY` | 1 | 68.23 | 14.95 s |
-| speexdsp | 1.2.1 | quality 10, float | 1 | 62.11 | 9.46 s |
+| libsamplerate | 0.2.2 | `SRC_SINC_BEST_QUALITY` | 1 | 68.23 | 14.84 s |
+| speexdsp | 1.2.1 | quality 10, float | 1 | 62.11 | 9.44 s |
 
 "Insane" is `--quality 262144 --bandwidth 0.995 --taper-type kaiser --beta 32 --alias-floor-db 0`, the settings behind dBpoweramp's ARDFTSRC Insane entry. ardftsrc-rs is the official Windows release. Everything else was built from source with GCC 16.1 at `-O3 -march=x86-64-v3`: soxr from tag `0.1.3` (945b592), SoX from tag `sox-14.4.2` (45b161d), and libsamplerate and speexdsp from their release tarballs. The libraries are called through `bench/srcbench.cpp`. Most of the gap in the lower rows comes from the aliasing, impulse, intermodulation and gapless tests.
 
@@ -63,7 +63,8 @@ To reproduce, put the Hydrogenaudio test pack in `tests/data/`, then run `bench/
 - Each block is processed with overlap-save in the rational domain. Nb = nb·Q input bins map to Mb = nb·P output bins, where P/Q is the reduced rate ratio.
 - When downsampling, spectrum bins above the output Nyquist are folded back onto it, so the transition band is power-complementary. When upsampling, the input spectrum is extended periodically.
 - Rates that are very close together, like 44100 and 44101, put the transition band on the kernel's own Nyquist. In that case the kernel is sampled on a finer grid and every bin is folded modulo Mb.
-- The signal edges are extended with Burg linear prediction (order 32), which avoids the pre-echo that zero padding causes.
+- The kernel taps (sinc and Kaiser window) are computed in double-double, with exact integer reduction of the sinc argument.
+- The signal edges are extended with Burg linear prediction (order 32), which avoids the pre-echo that zero padding causes. The Burg recursion also runs in double-double.
 - The FFT is custom. It uses mixed-radix Stockham passes (2, 3, 4, 5, 7) with a four-step split that runs four columns per vector (AVX2, or plain arrays the compiler vectorises). Other lengths go through a Bluestein transform. Twiddle factors are exact in double-double.
 - When the input and output rates are equal, the samples are copied unchanged.
 

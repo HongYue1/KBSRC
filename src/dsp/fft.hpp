@@ -155,19 +155,31 @@ template <> struct Lane<double, V4> {
     }
     static cx<V4> packw(const cx<double>* const* p) { return pack4(*p[0], *p[1], *p[2], *p[3]); }
     static void unpack(const cx<V4>& v, cx<double>* const* o, int n) {
+#if KBSRC_SIMD_AVX2
+        __m256d lo = _mm256_unpacklo_pd(v.re.v, v.im.v), hi = _mm256_unpackhi_pd(v.re.v, v.im.v);  // (a,c) (b,d)
+        alignas(32) double t0[4], t1[4]; _mm256_store_pd(t0, lo); _mm256_store_pd(t1, hi);
+        o[0]->re = t0[0]; o[0]->im = t0[1]; if (n > 1) { o[1]->re = t1[0]; o[1]->im = t1[1]; }
+        if (n > 2) { o[2]->re = t0[2]; o[2]->im = t0[3]; } if (n > 3) { o[3]->re = t1[2]; o[3]->im = t1[3]; }
+#else
         double re[4], im[4]; v4_store(v.re, re); v4_store(v.im, im);
         for (int l = 0; l < n; l++) { o[l]->re = re[l]; o[l]->im = im[l]; }
+#endif
     }
 };
 template <> struct Lane<dd, DD4> {
     static constexpr int N = 4;
     static cx<DD4> packw(const cx<dd>* const* p) {
+#if KBSRC_SIMD_AVX2
+        return {DD4(_mm256_set_pd(p[3]->re.hi, p[2]->re.hi, p[1]->re.hi, p[0]->re.hi), _mm256_set_pd(p[3]->re.lo, p[2]->re.lo, p[1]->re.lo, p[0]->re.lo)),
+                DD4(_mm256_set_pd(p[3]->im.hi, p[2]->im.hi, p[1]->im.hi, p[0]->im.hi), _mm256_set_pd(p[3]->im.lo, p[2]->im.lo, p[1]->im.lo, p[0]->im.lo))};
+#else
         double a[4], b[4], c[4], d[4];
         for (int l = 0; l < 4; l++) { a[l] = p[l]->re.hi; b[l] = p[l]->re.lo; c[l] = p[l]->im.hi; d[l] = p[l]->im.lo; }
         return {dd4_load(a, b), dd4_load(c, d)};
+#endif
     }
     static void unpack(const cx<DD4>& v, cx<dd>* const* o, int n) {
-        double a[4], b[4], c[4], d[4];
+        alignas(32) double a[4], b[4], c[4], d[4];
         dd4_store(v.re, a, b); dd4_store(v.im, c, d);
         for (int l = 0; l < n; l++) { o[l]->re = qts(a[l], b[l]); o[l]->im = qts(c[l], d[l]); }
     }

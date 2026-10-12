@@ -17,7 +17,7 @@
 namespace kbsrc::KBSRC_ISA {
 
 using namespace dsp;
-using kbsrc::detail::burg_extrap;
+using detail::burg_extrap;
 using detail::kernel;
 using detail::kernel_spectrum;
 using detail::kernel_taps;
@@ -107,11 +107,12 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
     long long E = L + Q, pre = (E + 64 + Q - 1) / Q * Q, span = pre + nin + E + 64;
     auto fix = [&](int v) { while (v % 2 || !smooth7(v / 2)) v++; return v; };   // non-7-smooth P/Q -> Bluestein
     int nb = fix(opt.block ? opt.block : 10 * marg);
-    // Short inputs: shrink blocks so every thread gets work. Block size affects rounding,
-    // so this heuristic is part of the output definition; keep it stable.
+    // Short inputs: shrink blocks so up to 8 threads get work. Block size affects rounding, so this
+    // heuristic is part of the output definition: it must not depend on the machine or on --threads.
+    const long long shrink_threads = 8;
     while (!opt.block && nb > 4 * marg) {
         long long nbk = (span + (long long)(nb - 2 * marg) * Q - 1) / ((long long)(nb - 2 * marg) * Q);
-        if ((long long)ch * ((nbk + 3) / 4) >= 2LL * threads) break;
+        if ((long long)ch * ((nbk + 3) / 4) >= 2 * shrink_threads) break;
         int nn = fix(std::max(4 * marg, nb * 3 / 4)); if (nn >= nb) break; nb = nn;
     }
     int Nb = nb * Q, Mb = nb * P, hop = nb - 2 * marg;
@@ -124,7 +125,7 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
         double* X = xx[c].data() + base + pre;
         for (long long i = 0; i < nin; i++) X[i] = in[i * ch + c];
         if (opt.lpc_edges) {
-            long long ext = E + 32; double fd[32]; for (int i = 0; i < 32; i++) fd[i] = 0.5 * (1 + std::cos(3.14159265358979323846 * i / 32));
+            long long ext = E + 32; double fd[32]; for (int i = 0; i < 32; i++) { dd c, sn; dd_cis(i, 64, c, sn); fd[i] = ((dd(1.0) + c) * 0.5).hi; }   // raised cosine
             std::vector<double> tl = burg_extrap(X, nin, ext); for (int i = 0; i < 32; i++) tl[ext - 32 + i] *= fd[i];
             long long m = std::min<long long>(nin, train); std::vector<double> xr(m); for (long long i = 0; i < m; i++) xr[i] = X[m - 1 - i];
             std::vector<double> hd = burg_extrap(xr.data(), m, ext);

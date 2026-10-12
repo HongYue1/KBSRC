@@ -52,6 +52,21 @@ static inline dd operator/(const dd& a, const dd& b) {  // long division, 3 step
     double q2 = r.hi / b.hi; r = r - b * q2;
     double q3 = r.hi / b.hi; return qts(q1, q2) + dd(q3);
 }
+// sqrt: one Newton step on the double estimate (exact residual via prod_err)
+static inline dd dd_sqrt(const dd& a) {
+    if (a.hi <= 0) return dd(0.0);
+    double y = std::sqrt(a.hi); dd r = a - dd(y) * y;
+    return qts(y, r.hi / (2 * y));
+}
+// modified Bessel function I0, power series in double-double
+static inline dd dd_i0(const dd& x) {
+    dd q = x * x / 4.0, t(1.0), s(1.0);
+    for (int k = 1; k < 2000; k++) {
+        t = t * q / (double(k) * double(k)); s += t;
+        if (t.hi < s.hi * 1e-34) break;
+    }
+    return s;
+}
 static const dd DD_PI(3.141592653589793116e+00, 1.224646799147353207e-16);
 
 // cos/sin of 2*pi*k/N, exact integer argument reduction, Taylor in dd on [0, pi/4]

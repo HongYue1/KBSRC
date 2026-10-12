@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(kbsrc VERSION 1.2.1 DESCRIPTION "Kaiser-Bessel fold-back sample-rate converter" LANGUAGES CXX)
+project(kbsrc VERSION 1.2.2 DESCRIPTION "Kaiser-Bessel fold-back sample-rate converter" LANGUAGES CXX)
 
 if(MSVC)
   message(FATAL_ERROR "kbsrc needs GCC or Clang (uses __int128 and x87 long double)")
@@ -43,7 +43,7 @@ elseif(NOT KBSRC_ARCH STREQUAL "portable")
 endif()
 
 # The engine is built once per instruction set, each copy in its own namespace (src/isa.hpp).
-set(KBSRC_ENGINE_SOURCES src/resampler.cpp src/design.cpp)
+set(KBSRC_ENGINE_SOURCES src/resampler.cpp src/design.cpp src/lpc.cpp)
 function(kbsrc_engine name)
   add_library(kbsrc_engine_${name} OBJECT ${KBSRC_ENGINE_SOURCES})
   target_include_directories(kbsrc_engine_${name} PRIVATE ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/src)
@@ -58,7 +58,7 @@ if(KBSRC_ARCH STREQUAL "portable" AND KBSRC_X86)
   list(APPEND KBSRC_ENGINE_OBJECTS $<TARGET_OBJECTS:kbsrc_engine_avx2>)
 endif()
 
-add_library(kbsrc_lib STATIC src/dispatch.cpp src/lpc.cpp ${KBSRC_ENGINE_OBJECTS})
+add_library(kbsrc_lib STATIC src/dispatch.cpp ${KBSRC_ENGINE_OBJECTS})
 add_library(kbsrc::kbsrc ALIAS kbsrc_lib)
 set_target_properties(kbsrc_lib PROPERTIES OUTPUT_NAME kbsrc)
 target_include_directories(kbsrc_lib

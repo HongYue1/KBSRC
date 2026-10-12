@@ -21,7 +21,8 @@ fi
 
 IDS=("$@")
 [ ${#IDS[@]} -gt 0 ] || IDS=($(cd "$O" && ls -d */ | tr -d / | grep -v '^_'))
-printf "id\tspectrogram\tbandwidth\timpulse_freq\taliasing\tintermod\tgapless\tdelay_samples\tpreringing\n" > "$O/scores.tsv"
+S=$O/scores.tsv   # one row per id; rows for ids not scored in this run are kept
+[ -f "$S" ] || printf "id\tspectrogram\tbandwidth\timpulse_freq\taliasing\tintermod\tgapless\tdelay_samples\tpreringing\n" > "$S"
 for id in "${IDS[@]}"; do
   W=$O/$id/_eval; rm -rf "$W"; mkdir -p "$W"
   cp "$TS"/TestScripts/*.m "$TS"/TestScripts/*REF.png "$W/"
@@ -36,6 +37,7 @@ for id in "${IDS[@]}"; do
   q() { [ -f "$W/$1" ] && tr -d ' \r' < "$W/$1" | grep . | tail -1 || echo NA; }  # last value
   printf "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n" "$id" "$(q quality-spectrogram.txt)" "$(q quality-bandwidth.txt)" \
     "$(q quality-impulse_freq.txt)" "$(q quality-alias.txt)" "$(q quality-intermoddiff.txt)" "$(q quality-gapless.txt)" \
-    "$(q calculateddelay.txt)" "$(q quality-preringing.txt)" | tee -a "$O/scores.tsv"
+    "$(q calculateddelay.txt)" "$(q quality-preringing.txt)" > "$W/row.tsv"
+  cat "$W/row.tsv"; { grep -v "^$id	" "$S" || true; cat "$W/row.tsv"; } > "$S.tmp" && mv "$S.tmp" "$S"
   rm -f "$W"/*.wav
 done
