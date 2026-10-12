@@ -9,7 +9,7 @@
 #include "dsp/double_double.hpp"
 #include "dsp/simd.hpp"
 
-namespace kbsrc::dsp {
+namespace kbsrc::KBSRC_ISA::dsp {
 
 template <class T> static inline T from_dd(const dd& v);
 template <> inline double from_dd<double>(const dd& v) { return v.hi; }
@@ -144,27 +144,31 @@ template <class S> struct Lane<S, S> {
 template <> struct Lane<double, V4> {
     static constexpr int N = 4;
     static inline cx<V4> pack4(const cx<double>& a, const cx<double>& b, const cx<double>& c, const cx<double>& d) {
+#if KBSRC_SIMD_AVX2
         __m256d l0 = _mm256_loadu2_m128d((const double*)&c, (const double*)&a);   // a.re a.im c.re c.im
         __m256d l1 = _mm256_loadu2_m128d((const double*)&d, (const double*)&b);   // b.re b.im d.re d.im
         return {V4(_mm256_unpacklo_pd(l0, l1)), V4(_mm256_unpackhi_pd(l0, l1))};   // a b c d order
+#else
+        const double re[4] = {a.re, b.re, c.re, d.re}, im[4] = {a.im, b.im, c.im, d.im};
+        return {v4_load(re), v4_load(im)};
+#endif
     }
     static cx<V4> packw(const cx<double>* const* p) { return pack4(*p[0], *p[1], *p[2], *p[3]); }
     static void unpack(const cx<V4>& v, cx<double>* const* o, int n) {
-        __m256d lo = _mm256_unpacklo_pd(v.re.v, v.im.v), hi = _mm256_unpackhi_pd(v.re.v, v.im.v);  // (a,c) (b,d)
-        alignas(32) double t0[4], t1[4]; _mm256_store_pd(t0, lo); _mm256_store_pd(t1, hi);
-        o[0]->re = t0[0]; o[0]->im = t0[1]; if (n > 1) { o[1]->re = t1[0]; o[1]->im = t1[1]; }
-        if (n > 2) { o[2]->re = t0[2]; o[2]->im = t0[3]; } if (n > 3) { o[3]->re = t1[2]; o[3]->im = t1[3]; }
+        double re[4], im[4]; v4_store(v.re, re); v4_store(v.im, im);
+        for (int l = 0; l < n; l++) { o[l]->re = re[l]; o[l]->im = im[l]; }
     }
 };
 template <> struct Lane<dd, DD4> {
     static constexpr int N = 4;
     static cx<DD4> packw(const cx<dd>* const* p) {
-        return {DD4(_mm256_set_pd(p[3]->re.hi, p[2]->re.hi, p[1]->re.hi, p[0]->re.hi), _mm256_set_pd(p[3]->re.lo, p[2]->re.lo, p[1]->re.lo, p[0]->re.lo)),
-                DD4(_mm256_set_pd(p[3]->im.hi, p[2]->im.hi, p[1]->im.hi, p[0]->im.hi), _mm256_set_pd(p[3]->im.lo, p[2]->im.lo, p[1]->im.lo, p[0]->im.lo))};
+        double a[4], b[4], c[4], d[4];
+        for (int l = 0; l < 4; l++) { a[l] = p[l]->re.hi; b[l] = p[l]->re.lo; c[l] = p[l]->im.hi; d[l] = p[l]->im.lo; }
+        return {dd4_load(a, b), dd4_load(c, d)};
     }
     static void unpack(const cx<DD4>& v, cx<dd>* const* o, int n) {
-        alignas(32) double a[4], b[4], c[4], d[4];
-        _mm256_store_pd(a, v.re.hi); _mm256_store_pd(b, v.re.lo); _mm256_store_pd(c, v.im.hi); _mm256_store_pd(d, v.im.lo);
+        double a[4], b[4], c[4], d[4];
+        dd4_store(v.re, a, b); dd4_store(v.im, c, d);
         for (int l = 0; l < n; l++) { o[l]->re = qts(a[l], b[l]); o[l]->im = qts(c[l], d[l]); }
     }
 };
@@ -195,7 +199,7 @@ template <class S, class W = S, class T = S> struct CFFT {
             bc.resize(n); std::vector<cx<dd>> v(m, cx<dd>{dd(0.0), dd(0.0)}), w(m);
             for (long long t = 0; t < n; t++) { long long e = (long long)((__int128)t * t % (2LL * n)); dd c, sn; dd_cis(e, 2LL * n, c, sn); bc[t] = {from_dd<W>(c), from_dd<W>(sn)};
                 v[t] = {c, sn}; if (t) v[m - t] = {c, sn}; }
-            CFFT<dd, dd, dd> fd; fd.init(m); std::vector<__m256d> sc(fd.scratch_bytes() / 32 + 2);
+            CFFT<dd, dd, dd> fd; fd.init(m); std::vector<Scratch32> sc(fd.scratch_bytes() / 32 + 2);
             cx<dd>* V = fd.run(v.data(), w.data(), sc.data()); Vf.resize(m);
             for (int k = 0; k < m; k++) Vf[k] = {from_dd<W>(V[k].re / (double)m), from_dd<W>(V[k].im / (double)m)};
             return;
@@ -281,4 +285,4 @@ template <class T, class W = T, class C = T> struct RFFT {  // real transform of
     }
 };
 
-}  // namespace kbsrc::dsp
+}  // namespace kbsrc::KBSRC_ISA::dsp

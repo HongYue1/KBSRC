@@ -13,14 +13,11 @@
 #include "dsp/fft.hpp"
 #include "lpc.hpp"
 
-#ifndef KBSRC_VERSION
-#define KBSRC_VERSION "dev"
-#endif
-
-namespace kbsrc {
+// One copy of this file is compiled per instruction set (see isa.hpp); src/dispatch.cpp picks one at run time.
+namespace kbsrc::KBSRC_ISA {
 
 using namespace dsp;
-using detail::burg_extrap;
+using kbsrc::detail::burg_extrap;
 using detail::kernel;
 using detail::kernel_spectrum;
 using detail::kernel_taps;
@@ -44,7 +41,7 @@ void run_engine(const std::vector<std::vector<double>>& xx, std::vector<std::vec
     auto work = [&]() {
         const int mx = std::max(Nb, Mb);
         std::vector<T> r(mx); std::vector<cx<T>> X(Nb / 2 + 1), Y(K), z(mx / 2), y(mx / 2);
-        std::vector<__m256d> sc(std::max(Fw.scratch_bytes(), Iv.scratch_bytes()) / 32 + 2);
+        std::vector<Scratch32> sc(std::max(Fw.scratch_bytes(), Iv.scratch_bytes()) / 32 + 2);
         for (;;) {
             long long t = next++; if (t >= ntask) break;
             int c = (int)(t / nblk); long long b = t % nblk;
@@ -88,9 +85,7 @@ void run_engine(const std::vector<std::vector<double>>& xx, std::vector<std::vec
 
 }  // namespace
 
-const char* version() { return KBSRC_VERSION; }
-
-std::vector<std::vector<double>> resample(const double* in, long long frames, int channels, int rate_in, int rate_out,
+std::vector<std::vector<double>> resample_impl(const double* in, long long frames, int channels, int rate_in, int rate_out,
                                           const Options& opt, Stats* stats) {
     if (channels < 1 || frames < 0 || (frames > 0 && !in)) throw std::invalid_argument("bad input buffer");
     if (rate_in < 1 || rate_out < 1) throw std::invalid_argument("sample rates must be positive");
@@ -162,10 +157,11 @@ std::vector<std::vector<double>> resample(const double* in, long long frames, in
         default: run_engine<dd, dd, DD4>(xx, out, P, Q, up, nb, marg, hop, (int)nblk, o, nout, H, threads, Jg); break;
     }
     if (stats) {
+        stats->isa = simd_name;
         stats->p = P; stats->q = Q; stats->taps = 2 * Lk + 1; stats->block = nb; stats->threads = threads;
         stats->general_fold = Jg != 0; stats->design_seconds = t1 - t0; stats->process_seconds = now() - t1;
     }
     return out;
 }
 
-}  // namespace kbsrc
+}  // namespace kbsrc::KBSRC_ISA

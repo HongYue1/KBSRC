@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(kbsrc VERSION 1.2.0 DESCRIPTION "Kaiser-Bessel fold-back sample-rate converter" LANGUAGES CXX)
+project(kbsrc VERSION 1.2.1 DESCRIPTION "Kaiser-Bessel fold-back sample-rate converter" LANGUAGES CXX)
 
 if(MSVC)
   message(FATAL_ERROR "kbsrc needs GCC or Clang (uses __int128 and x87 long double)")
@@ -12,35 +12,60 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-option(KBSRC_NATIVE "Optimize for the build machine (-march=native). OFF targets x86-64-v3 (AVX2 + FMA)." ON)
+set(KBSRC_ARCH "native" CACHE STRING "native: tune for the build machine; portable: run on any CPU of this architecture (x86-64 adds an AVX2 engine picked at run time)")
+set_property(CACHE KBSRC_ARCH PROPERTY STRINGS native portable)
 option(KBSRC_BUILD_TESTS "Register the Python test suite with CTest" ON)
 
 find_package(Threads REQUIRED)
 
-add_library(kbsrc_options INTERFACE)
-if(KBSRC_NATIVE)
-  target_compile_options(kbsrc_options INTERFACE -march=native)
-else()
-  target_compile_options(kbsrc_options INTERFACE -march=x86-64-v3 -mtune=generic)
+string(TOLOWER "${CMAKE_SYSTEM_PROCESSOR}" KBSRC_CPU)
+set(KBSRC_X86 OFF)
+if(KBSRC_CPU MATCHES "^(x86_64|amd64|x64)$")
+  set(KBSRC_X86 ON)
 endif()
-# Required: the double-double arithmetic relies on exact IEEE rounding of every operation.
+
+# Flags shared by every target. Required: the double-double arithmetic relies on exact IEEE rounding of every
+# operation, so no contraction into FMA and no fast-math.
+add_library(kbsrc_options INTERFACE)
 target_compile_options(kbsrc_options INTERFACE -ffp-contract=off -Wall -Wextra -Wno-ignored-attributes)
 if(MINGW)
   # GCC on Windows cannot guarantee 32-byte stack alignment for AVX spills.
   target_compile_options(kbsrc_options INTERFACE -Wa,-muse-unaligned-vector-move)
 endif()
+if(KBSRC_ARCH STREQUAL "native")
+  if(KBSRC_CPU MATCHES "^(arm|aarch64|arm64)")
+    target_compile_options(kbsrc_options INTERFACE -mcpu=native)
+  else()
+    target_compile_options(kbsrc_options INTERFACE -march=native)
+  endif()
+elseif(NOT KBSRC_ARCH STREQUAL "portable")
+  message(FATAL_ERROR "KBSRC_ARCH must be native or portable")
+endif()
 
-add_library(kbsrc_lib STATIC
-  src/resampler.cpp
-  src/design.cpp
-  src/lpc.cpp
-)
+# The engine is built once per instruction set, each copy in its own namespace (src/isa.hpp).
+set(KBSRC_ENGINE_SOURCES src/resampler.cpp src/design.cpp)
+function(kbsrc_engine name)
+  add_library(kbsrc_engine_${name} OBJECT ${KBSRC_ENGINE_SOURCES})
+  target_include_directories(kbsrc_engine_${name} PRIVATE ${PROJECT_SOURCE_DIR}/include ${PROJECT_SOURCE_DIR}/src)
+  target_compile_definitions(kbsrc_engine_${name} PRIVATE KBSRC_ISA=${name})
+  target_compile_options(kbsrc_engine_${name} PRIVATE ${ARGN})
+  target_link_libraries(kbsrc_engine_${name} PRIVATE kbsrc_options)
+endfunction()
+kbsrc_engine(base)
+set(KBSRC_ENGINE_OBJECTS $<TARGET_OBJECTS:kbsrc_engine_base>)
+if(KBSRC_ARCH STREQUAL "portable" AND KBSRC_X86)
+  kbsrc_engine(avx2 -march=x86-64-v3 -mtune=generic)
+  list(APPEND KBSRC_ENGINE_OBJECTS $<TARGET_OBJECTS:kbsrc_engine_avx2>)
+endif()
+
+add_library(kbsrc_lib STATIC src/dispatch.cpp src/lpc.cpp ${KBSRC_ENGINE_OBJECTS})
 add_library(kbsrc::kbsrc ALIAS kbsrc_lib)
 set_target_properties(kbsrc_lib PROPERTIES OUTPUT_NAME kbsrc)
 target_include_directories(kbsrc_lib
   PUBLIC $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>
   PRIVATE ${PROJECT_SOURCE_DIR}/src)
-target_compile_definitions(kbsrc_lib PRIVATE KBSRC_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(kbsrc_lib PRIVATE KBSRC_VERSION="${PROJECT_VERSION}"
+  $<$<TARGET_EXISTS:kbsrc_engine_avx2>:KBSRC_ENGINE_AVX2>)
 target_link_libraries(kbsrc_lib PRIVATE kbsrc_options PUBLIC Threads::Threads)
 
 add_library(kbsrc_io STATIC src/io/wav.cpp)

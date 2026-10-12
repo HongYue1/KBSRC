@@ -129,8 +129,8 @@ int run(const std::vector<std::string>& args) {
     if (clipped) std::fprintf(stderr, "kbsrc: warning: %lld samples clipped\n", clipped);
     if (verbose) {
         std::fprintf(stderr, "%d Hz -> %d Hz, %d ch, %lld -> %lld frames\n", a.rate, rate, a.ch, a.frames, nout);
-        std::fprintf(stderr, "P/Q=%lld/%lld taps=%lld block=%d threads=%d%s\n", st.p, st.q, st.taps, st.block,
-                     st.threads, st.general_fold ? " (general fold)" : "");
+        std::fprintf(stderr, "P/Q=%lld/%lld taps=%lld block=%d threads=%d engine=%s%s\n", st.p, st.q, st.taps, st.block,
+                     st.threads, st.isa, st.general_fold ? " (general fold)" : "");
         std::fprintf(stderr, "read %.3fs  design %.3fs  resample %.3fs  write %.3fs  total %.3fs\n", t1 - t0,
                      st.design_seconds, t2 - t1 - st.design_seconds, t3 - t2, t3 - t0);
     }

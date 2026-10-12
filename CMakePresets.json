@@ -6,14 +6,14 @@
       "displayName": "Release, tuned for this machine",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/release",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "KBSRC_NATIVE": "ON" }
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "KBSRC_ARCH": "native" }
     },
     {
       "name": "portable",
-      "displayName": "Release, any x86-64-v3 CPU (AVX2 + FMA)",
+      "displayName": "Release, any CPU (AVX2 engine selected at run time on x86-64)",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/portable",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "KBSRC_NATIVE": "OFF" }
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release", "KBSRC_ARCH": "portable" }
     },
     {
       "name": "debug",

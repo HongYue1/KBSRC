@@ -6,14 +6,14 @@ The approach follows [ARDFTSRC](https://github.com/mrspoonsi/ARDFTSRC): DFT-doma
 
 ## Building
 
-You need CMake 3.20+, Ninja, GCC 12+ or Clang 15+, and an x86-64 CPU with AVX2 and FMA. MSVC isn't supported.
+You need CMake 3.20+, Ninja, and GCC 12+ or Clang 15+. MSVC isn't supported. It builds on x86-64 and ARM64.
 
 ```
 cmake --preset release
 cmake --build --preset release
 ```
 
-The binary is written to `build/release/kbsrc`. The `release` preset tunes for the build machine. Use `portable` instead for a binary that runs on any AVX2 CPU; its output is identical. On Windows, [w64devkit](https://github.com/skeeto/w64devkit) works out of the box and produces a static `kbsrc.exe`.
+The binary is written to `build/release/kbsrc`. The `release` preset tunes for the build machine. Use `portable` for a binary that runs on any CPU of the same architecture: on x86-64 it contains an AVX2 engine and a generic one and picks at run time. The generic engine is about 1.4x slower in exact mode and 1.15x slower in fast mode (1.85 s vs 1.34 s and 0.75 s vs 0.65 s on the benchmark below). Set `KBSRC_CPU=generic` to force it. Both engines give bit-identical output. Other compilers or platforms (such as ARM64) can differ by an ULP or two, below -300 dBFS, because `long double` and the maths library differ. On Windows, [w64devkit](https://github.com/skeeto/w64devkit) works out of the box and produces a static `kbsrc.exe`.
 
 ## Usage
 
@@ -64,7 +64,7 @@ To reproduce, put the Hydrogenaudio test pack in `tests/data/`, then run `bench/
 - When downsampling, spectrum bins above the output Nyquist are folded back onto it, so the transition band is power-complementary. When upsampling, the input spectrum is extended periodically.
 - Rates that are very close together, like 44100 and 44101, put the transition band on the kernel's own Nyquist. In that case the kernel is sampled on a finer grid and every bin is folded modulo Mb.
 - The signal edges are extended with Burg linear prediction (order 32), which avoids the pre-echo that zero padding causes.
-- The FFT is custom. It uses mixed-radix Stockham passes (2, 3, 4, 5, 7) with a four-step split that runs four columns per AVX2 vector. Other lengths go through a Bluestein transform. Twiddle factors are exact in double-double.
+- The FFT is custom. It uses mixed-radix Stockham passes (2, 3, 4, 5, 7) with a four-step split that runs four columns per vector (AVX2, or plain arrays the compiler vectorises). Other lengths go through a Bluestein transform. Twiddle factors are exact in double-double.
 - When the input and output rates are equal, the samples are copied unchanged.
 
 ## Tests

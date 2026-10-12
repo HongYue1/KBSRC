@@ -1,8 +1,23 @@
-// Double-double arithmetic (~106-bit significand) built on error-free transforms with FMA
+// Double-double arithmetic (~106-bit significand) built on error-free transforms
 #pragma once
 #include <cmath>
+#include "isa.hpp"
 
-namespace kbsrc::dsp {
+namespace kbsrc::KBSRC_ISA::dsp {
+
+// Exact error a*b - p of the rounded product p = fl(a*b). Hardware FMA when available, otherwise
+// Dekker's split (also exact while no partial product underflows, which audio-range values never do).
+static inline double prod_err(double a, double b, double p) {
+#if defined(__FMA__) || defined(__ARM_FEATURE_FMA) || defined(__aarch64__)
+    return std::fma(a, b, -p);
+#else
+    const double S = 134217729.0;   // 2^27 + 1
+    double t = S * a, ah = t - (t - a), al = a - ah;
+    t = S * b; double bh = t - (t - b), bl = b - bh;
+    return ((ah * bh - p) + ah * bl + al * bh) + al * bl;
+#endif
+}
+
 struct dd {
     double hi, lo;
     dd() : hi(0), lo(0) {}
@@ -18,11 +33,11 @@ static inline dd operator+(const dd& a, const dd& b) {
 static inline dd operator-(const dd& a) { return dd(-a.hi, -a.lo); }
 static inline dd operator-(const dd& a, const dd& b) { return a + (-b); }
 static inline dd operator*(const dd& a, const dd& b) {
-    double p = a.hi * b.hi, e = std::fma(a.hi, b.hi, -p);
+    double p = a.hi * b.hi, e = prod_err(a.hi, b.hi, p);
     e += a.hi * b.lo + a.lo * b.hi; return qts(p, e);
 }
 static inline dd operator*(const dd& a, double b) {
-    double p = a.hi * b, e = std::fma(a.hi, b, -p); e += a.lo * b; return qts(p, e);
+    double p = a.hi * b, e = prod_err(a.hi, b, p); e += a.lo * b; return qts(p, e);
 }
 static inline dd operator/(const dd& a, double b) {
     double q1 = a.hi / b; dd r = a - dd(b) * q1;
@@ -64,4 +79,4 @@ static inline void dd_cis(long long k, long long N, dd& c, dd& s) {  // e^{+i 2 
     }
 }
 
-}  // namespace kbsrc::dsp
+}  // namespace kbsrc::KBSRC_ISA::dsp

@@ -6,8 +6,8 @@
 namespace kbsrc {
 
 enum class Precision {
-    Fast,        // float64 pipeline, AVX2
-    Exact,       // double-double (~106-bit) pipeline, AVX2
+    Fast,        // float64 pipeline
+    Exact,       // double-double (~106-bit) pipeline
     LongDouble,  // x87 80-bit reference
 };
 
@@ -26,11 +26,13 @@ struct Stats {
     int block = 0, threads = 0;
     bool general_fold = false;  // near-unity ratio path
     double design_seconds = 0, process_seconds = 0;
+    const char* isa = "";       // engine used: "avx2" or "generic" (identical output)
 };
 
 // Resamples interleaved input (frames x channels) from rate_in to rate_out.
 // Returns planar output: one vector per channel, ceil(frames * rate_out / rate_in) samples each.
-// Throws std::invalid_argument on bad arguments.
+// Throws std::invalid_argument on bad arguments. Portable builds pick the AVX2 engine when the CPU
+// supports it; setting the environment variable KBSRC_CPU=generic forces the generic one.
 std::vector<std::vector<double>> resample(const double* interleaved, long long frames, int channels,
                                           int rate_in, int rate_out, const Options& options = {},
                                           Stats* stats = nullptr);

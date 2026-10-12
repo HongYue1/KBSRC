@@ -5,7 +5,7 @@
 
 #include "dsp/double_double.hpp"
 
-namespace kbsrc::detail {
+namespace kbsrc::KBSRC_ISA::detail {
 
 using dsp::dd;
 
@@ -19,4 +19,4 @@ std::vector<dd> kernel(long long fk, long long a, long long b, double T, double 
 // Real spectrum (bins 0..n/2) of the symmetric kernel placed circularly in length n, divided by scale.
 std::vector<dd> kernel_spectrum(const std::vector<dd>& h, int n, double scale);
 
-}  // namespace kbsrc::detail
+}  // namespace kbsrc::KBSRC_ISA::detail
