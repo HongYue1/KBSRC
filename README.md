@@ -36,16 +36,16 @@ Input can be 8/16/24/32-bit PCM or 32/64-bit float, with any number of channels.
 
 ## Comparison
 
-All runs were done on one machine (Ryzen 7 5800H, Windows 11). Time is the median of 5 runs after warm-up, converting a 180-second stereo 96 kHz noise file to 44.1 kHz, 64-bit float in and out, wall-clock including file I/O. All timings were refreshed together on 2026-10-13 at a fixed 3600 MHz using `bench/run.sh`, with the settings shown below. KBSRC uses the portable GCC 16.1 build.
+All runs were done on one machine (Ryzen 7 5800H, Windows 11). Time is the median of 5 runs after warm-up, converting a 180-second stereo 96 kHz noise file to 44.1 kHz, 64-bit float in and out, wall-clock including file I/O. The KBSRC rows were refreshed on 2026-10-13 at a fixed 3600 MHz using `bench/run.sh` and the portable GCC 16.1 build with the writer update. The timed conversion code is unchanged in 1.2.4; only the version label changed afterwards. Competitor timings are from the earlier batch on the same date, machine and clock.
 
 Quality is the Hydrogenaudio balanced score, previously computed locally with the official scripts in GNU Octave 11.3. The current KBSRC build preserves the tested official output bytes in exact and fast modes; its listed scores are carried forward, not newly measured.
 
 | Resampler | Version | Settings | Threads | Score | Time |
 |---|---|---|---|---|---|
-| kbsrc | 1.2.3 | `--mode exact` | 8 | 99.93 | 1.115 s |
-| kbsrc | 1.2.3 | `--mode exact -t 1` | 1 | 99.93 | 2.583 s |
-| kbsrc | 1.2.3 | `--mode fast` | 4 | 99.87 | 0.650 s |
-| kbsrc | 1.2.3 | `--mode fast -t 1` | 1 | 99.87 | 0.808 s |
+| kbsrc | 1.2.4 | `--mode exact` | 8 | 99.93 | 1.137 s |
+| kbsrc | 1.2.4 | `--mode exact -t 1` | 1 | 99.93 | 2.479 s |
+| kbsrc | 1.2.4 | `--mode fast` | 4 | 99.87 | 0.628 s |
+| kbsrc | 1.2.4 | `--mode fast -t 1` | 1 | 99.87 | 0.768 s |
 | ardftsrc-rs | 0.3.1 | Insane, f64 | default | 99.74 | 2.250 s |
 | ardftsrc-rs | 0.3.1 | Insane, double-double | default | 99.92 | 30.985 s |
 | soxr | 0.1.3 | `SOXR_32_BITQ`, linear phase, 99.5% | 1 | 82.56 | 0.697 s |
@@ -59,6 +59,30 @@ Quality is the Hydrogenaudio balanced score, previously computed locally with th
 KBSRC achieves 99.93% on the Hydrogenaudio SRC comparison ([ranking](https://src.hydrogenaudio.org/), [result](https://src.hydrogenaudio.org/compareresults?id1=b7d5b47e-dd06-41cd-892a-b0b73d6e433d&id2=0)).
 
 To reproduce, put the Hydrogenaudio test pack in `tests/data/`, then run `bench/build_tools.sh`, `bench/run.sh` and `bench/score.sh`. Results go to `bench/out/`.
+
+### AVX2 vs generic
+
+KBSRC 1.2.4 on the same Ryzen 7 5800H at 3600 MHz, using the portable build and the same 180-second f64 noise conversion. Each engine was warmed up, then timed in five alternating trials with Python subprocess wall-clock timing, including setup and file I/O.
+
+| Mode | Threads | Generic | AVX2 | AVX2 speedup |
+|---|---:|---:|---:|---:|
+| exact | 1 | 7.750 s | 2.468 s | 3.14× |
+| exact | 8 | 1.659 s | 1.086 s | 1.53× |
+| fast | 1 | 1.233 s | 0.764 s | 1.61× |
+| fast | 4 | 0.709 s | 0.590 s | 1.20× |
+
+AVX2 was faster in every paired trial. Outputs matched byte-for-byte in all four comparisons. Set `KBSRC_CPU=generic` to force the portable array backend; otherwise the binary selects AVX2 when supported. Raw trials: `bench/out/_speed/writer-f64-engines-3600mhz-20261013.json`.
+
+### s24 output
+
+Same 180-second stereo noise conversion, but with s24 output, dither off and AVX2. These are Python subprocess wall times: one warm-up per binary, then five alternating pairs at 3600 MHz. The writer-update code was timed before the version-only bump to 1.2.4.
+
+| Mode | Threads | 1.2.3 | 1.2.4 | Lower wall time |
+|---|---:|---:|---:|---:|
+| exact | 8 | 2.172 s | 1.112 s | 48.8% |
+| fast | 4 | 1.621 s | 0.528 s | 67.4% |
+
+Full output bytes and clipping counts matched. The faster integer writer uses SSE4.1 when available, with a portable fallback; resampling math and default worker counts are unchanged.
 
 ## How it works
 

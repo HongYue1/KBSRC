@@ -1,6 +1,12 @@
 #include "io/wav.hpp"
 
 #include <algorithm>
+#include <cfenv>
+#include <cmath>
+#include <cstdlib>
+#if defined(__x86_64__) || defined(__i386__)
+#include <smmintrin.h>
+#endif
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -33,6 +39,59 @@ struct File {  // closes on scope exit so errors thrown mid-way do not leak the 
     FILE* f;
     ~File() { if (f) fclose(f); }
 };
+
+
+using PackFn = void (*)(uint8_t*, const std::vector<std::vector<double>>&, int, long long, long long,
+                       std::mt19937_64&, std::uniform_real_distribution<double>&, long long&);
+template<int B, bool D>
+void pack_scalar(uint8_t* p, const std::vector<std::vector<double>>& y, int ch, long long first, long long last,
+                 std::mt19937_64& rng, std::uniform_real_distribution<double>& U, long long& clipped) {
+    constexpr double sc = B == 2 ? 32768.0 : B == 3 ? 8388608.0 : 2147483648.0;
+    for (long long i = first; i < last; ++i) for (int c = 0; c < ch; ++c, p += B) {
+        double v = y[c][i] * sc;
+        if constexpr (D) v += U(rng) + U(rng);
+        v = std::nearbyint(v);
+        if (v > sc-1) { v = sc-1; ++clipped; } else if (v < -sc) { v = -sc; ++clipped; }
+        // The release serializes NaN as zero; avoid its undefined cast.
+        int64_t iv = std::isnan(v) ? 0 : (int64_t)v;
+        for (int t = 0; t < B; ++t) p[t] = (iv >> (8*t)) & 255;
+    }
+}
+
+#if defined(__x86_64__) || defined(__i386__)
+template<int B, bool D, int R>
+__attribute__((target("sse4.1")))
+void pack_sse(uint8_t* p, const std::vector<std::vector<double>>& y, int ch, long long first, long long last,
+              std::mt19937_64& rng, std::uniform_real_distribution<double>& U, long long& clipped) {
+    constexpr double sc = B == 2 ? 32768.0 : B == 3 ? 8388608.0 : 2147483648.0;
+    for (long long i = first; i < last; ++i) for (int c = 0; c < ch; ++c, p += B) {
+        double v = y[c][i] * sc;
+        if constexpr (D) v += U(rng) + U(rng);
+        v = _mm_cvtsd_f64(_mm_round_sd(_mm_setzero_pd(), _mm_set_sd(v), R | _MM_FROUND_NO_EXC));
+        if (v > sc-1) { v = sc-1; ++clipped; } else if (v < -sc) { v = -sc; ++clipped; }
+        // The release serializes NaN as zero; avoid its undefined cast.
+        int64_t iv = std::isnan(v) ? 0 : (int64_t)v;
+        for (int t = 0; t < B; ++t) p[t] = (iv >> (8*t)) & 255;
+    }
+}
+#endif
+
+template<int B, bool D>
+PackFn select_pack(bool use_sse, int rounding) {
+#if defined(__x86_64__) || defined(__i386__)
+    if (use_sse) {
+        switch (rounding) {
+        case FE_TONEAREST: return &pack_sse<B,D,_MM_FROUND_TO_NEAREST_INT>;
+        case FE_DOWNWARD: return &pack_sse<B,D,_MM_FROUND_TO_NEG_INF>;
+        case FE_UPWARD: return &pack_sse<B,D,_MM_FROUND_TO_POS_INF>;
+        case FE_TOWARDZERO: return &pack_sse<B,D,_MM_FROUND_TO_ZERO>;
+        }
+    }
+#else
+    (void)use_sse; (void)rounding;
+#endif
+    return &pack_scalar<B,D>;
+}
 
 }  // namespace
 
@@ -103,19 +162,40 @@ void write_wav(const char* path, const std::vector<std::vector<double>>& y, int 
     File fh{uopen(path, "wb")}; FILE* f = fh.f; if (!f) fail("cannot open output");
     if (fwrite(out.data(), 1, out.size(), f) != out.size()) fail("write error");
     std::mt19937_64 rng(12345); std::uniform_real_distribution<double> U(-0.5, 0.5);
-    double sc = bits == 16 ? 32768.0 : bits == 24 ? 8388608.0 : 2147483648.0; clipped = 0;
+    bool use_sse = false;
+    int rounding = std::fegetround();
+#if defined(_WIN32) && (defined(__x86_64__) || defined(__i386__))
+    // MinGW nearbyint uses x87, whereas fegetround may report MXCSR.
+    unsigned short cw;
+    __asm__ volatile("fnstcw %0" : "=m"(cw));
+    const int x87_modes[] = {FE_TONEAREST, FE_DOWNWARD, FE_UPWARD, FE_TOWARDZERO};
+    rounding = x87_modes[(cw >> 10) & 3];
+#endif
+#if defined(__x86_64__) || defined(__i386__)
+    const char* cpu = std::getenv("KBSRC_CPU");
+    use_sse = __builtin_cpu_supports("sse4.1") && !(cpu && std::strcmp(cpu,"generic") == 0);
+#if !defined(_WIN32)
+    // If the FP units disagree, retain the platform library behavior.
+    const int mxcsr_modes[] = {FE_TONEAREST, FE_DOWNWARD, FE_UPWARD, FE_TOWARDZERO};
+    if (mxcsr_modes[(_mm_getcsr() >> 13) & 3] != rounding) use_sse = false;
+#endif
+#endif
+    PackFn pack;
+    if (bps == 2) pack = dither ? select_pack<2,true>(use_sse,rounding) : select_pack<2,false>(use_sse,rounding);
+    else if (bps == 3) pack = dither ? select_pack<3,true>(use_sse,rounding) : select_pack<3,false>(use_sse,rounding);
+    else pack = dither ? select_pack<4,true>(use_sse,rounding) : select_pack<4,false>(use_sse,rounding);
+    clipped = 0;
     const long long CF = 1 << 16; std::vector<uint8_t> buf((size_t)CF * ch * bps);
     for (long long f0 = 0; f0 < frames; f0 += CF) {
         long long nf = std::min(CF, frames - f0); uint8_t* p = buf.data();
-        for (long long i = f0; i < f0 + nf; i++) for (int c = 0; c < ch; c++, p += bps) {
-            double x = y[c][i];
-            if (kind == 0) memcpy(p, &x, 8);
-            else if (kind == 1) { float v = (float)x; memcpy(p, &v, 4); }
-            else {
-                double v = x * sc; if (dither) v += U(rng) + U(rng);
-                v = std::nearbyint(v);
-                if (v > sc - 1) { v = sc - 1; clipped++; } else if (v < -sc) { v = -sc; clipped++; }
-                int64_t iv = (int64_t)v; for (int t = 0; t < bps; t++) p[t] = (iv >> (8 * t)) & 255;
+        if (kind == 2) {
+            pack(buf.data(), y, ch, f0, f0+nf, rng, U, clipped);
+            p += (size_t)nf * ch * bps;
+        } else {
+            for (long long i = f0; i < f0+nf; ++i) for (int c = 0; c < ch; ++c, p += bps) {
+                double x = y[c][i];
+                if (kind == 0) memcpy(p, &x, 8);
+                else { float v = (float)x; memcpy(p, &v, 4); }
             }
         }
         size_t nb = (size_t)(p - buf.data()); if (fwrite(buf.data(), 1, nb, f) != nb) fail("write error");
