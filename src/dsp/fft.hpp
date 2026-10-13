@@ -273,8 +273,9 @@ template <class T, class W = T, class C = T> struct RFFT {  // real transform of
     }
     // r: N reals -> X: h+1 bins (unnormalized). z, y: h scratch each.
     size_t scratch_bytes() const { return c.scratch_bytes(); }
-    void forward(const T* r, cx<T>* X, cx<T>* z, cx<T>* y, void* sc) const {
-        for (int i = 0; i < h; i++) z[i] = {r[2 * i], r[2 * i + 1]};
+    template <class U>
+    void forward(const U* r, cx<T>* X, cx<T>* z, cx<T>* y, void* sc) const {
+        for (int i = 0; i < h; i++) z[i] = {T(r[2 * i]), T(r[2 * i + 1])};
         z = c.run(z, y, sc);
         X[0] = {z[0].re + z[0].im, T(0.0)}; X[h] = {z[0].re - z[0].im, T(0.0)};
         for (int k = 1; k < h; k++) {

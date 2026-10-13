@@ -40,14 +40,14 @@ void run_engine(const std::vector<std::vector<double>>& xx, std::vector<std::vec
     std::atomic<long long> next(0);
     auto work = [&]() {
         const int mx = std::max(Nb, Mb);
-        std::vector<T> r(mx); std::vector<cx<T>> X(Nb / 2 + 1), Y(K), z(mx / 2), y(mx / 2);
+        std::vector<T> r(Mb); std::vector<cx<T>> X(Nb / 2 + 1), Y(K), z(mx / 2), y(mx / 2);
         std::vector<Scratch32> sc(std::max(Fw.scratch_bytes(), Iv.scratch_bytes()) / 32 + 2);
         for (;;) {
             long long t = next++; if (t >= ntask) break;
             int c = (int)(t / nblk); long long b = t % nblk;
             const double* s = xx[c].data() + b * hop * Q;
-            for (int i = 0; i < Nb; i++) r[i] = T(s[i]);
-            Fw.forward(r.data(), X.data(), z.data(), y.data(), sc.data());
+            // Pack f64 input directly into the complex FFT buffer; no expanded staging pass.
+            Fw.forward(s, X.data(), z.data(), y.data(), sc.data());
             if (Jg) {   // general path: true (unaliased) kernel response G[j] on the common grid, fold every bin mod Mb
                 for (int k = 0; k < K; k++) Y[k] = {T(0.0), T(0.0)};
                 for (int j = 0; j <= Jg; j++) {
