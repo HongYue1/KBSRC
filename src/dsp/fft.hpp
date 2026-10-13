@@ -278,20 +278,53 @@ template <class T, class W = T, class C = T> struct RFFT {  // real transform of
         for (int i = 0; i < h; i++) z[i] = {T(r[2 * i]), T(r[2 * i + 1])};
         z = c.run(z, y, sc);
         X[0] = {z[0].re + z[0].im, T(0.0)}; X[h] = {z[0].re - z[0].im, T(0.0)};
-        for (int k = 1; k < h; k++) {
-            cx<T> A = z[k], B = conj(z[h - k]);
-            cx<T> E = A + B, O = mul_mi(A - B);   // 2E, 2O
-            cx<T> v = E + mulw(O, w[k]);
-            X[k] = {v.re * T(0.5), v.im * T(0.5)};
+        if constexpr (std::is_same_v<T, double>) {
+            // The contiguous f64 loop is easier for the compiler to vectorise.
+            for (int k = 1; k < h; k++) {
+                cx<T> A = z[k], B = conj(z[h - k]);
+                cx<T> E = A + B, O = mul_mi(A - B);
+                cx<T> v = E + mulw(O, w[k]);
+                X[k] = {v.re * T(0.5), v.im * T(0.5)};
+            }
+        } else {
+            // Conjugate partners share the even/odd split. Keep their own twiddles:
+            // table rounding need not make w[h-k] exactly -conj(w[k]).
+            for (int k = 1; k <= h / 2; k++) {
+                const int j = h - k;
+                cx<T> A = z[k], B = conj(z[j]);
+                cx<T> E = A + B, O = mul_mi(A - B);   // 2E, 2O
+                cx<T> v = E + mulw(O, w[k]);
+                X[k] = {v.re * T(0.5), v.im * T(0.5)};
+                if (j != k) {
+                    cx<T> u = conj(E) + mulw(conj(O), w[j]);
+                    X[j] = {u.re * T(0.5), u.im * T(0.5)};
+                }
+            }
         }
     }
     // X: h+1 hermitian bins -> r: N reals, unnormalized (= N * true inverse)
     void inverse(const cx<T>* X, T* r, cx<T>* z, cx<T>* y, void* sc) const {
-        for (int k = 0; k < h; k++) {
-            cx<T> A = X[k], B = conj(X[h - k]);
-            cx<T> E = A + B, D = mulw(A - B, conj(w[k]));
-            cx<T> v = {E.re - D.im, E.im + D.re};   // E + i D
-            z[k] = conj(v);
+        if constexpr (std::is_same_v<T, double>) {
+            for (int k = 0; k < h; k++) {
+                cx<T> A = X[k], B = conj(X[h - k]);
+                cx<T> E = A + B, D = mulw(A - B, conj(w[k]));
+                cx<T> v = {E.re - D.im, E.im + D.re};
+                z[k] = conj(v);
+            }
+        } else {
+            for (int k = 0; k <= h / 2; k++) {
+                const int j = h - k;
+                cx<T> A = X[k], B = conj(X[j]);
+                cx<T> E = A + B, split = A - B;
+                cx<T> D = mulw(split, conj(w[k]));
+                cx<T> v = {E.re - D.im, E.im + D.re};   // E + i D
+                z[k] = conj(v);
+                if (k && j != k) {
+                    cx<T> Ej = conj(E), Dj = mulw(cx<T>{-split.re, split.im}, conj(w[j]));
+                    cx<T> u = {Ej.re - Dj.im, Ej.im + Dj.re};
+                    z[j] = conj(u);
+                }
+            }
         }
         z = c.run(z, y, sc);
         for (int i = 0; i < h; i++) { r[2 * i] = z[i].re; r[2 * i + 1] = -z[i].im; }

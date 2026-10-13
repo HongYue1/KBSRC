@@ -12,3 +12,6 @@ compile_commands.json
 /bench/*.log
 /bench/tools/
 /bench/out/
+
+# Local handoff and optimization journal
+/docs/
