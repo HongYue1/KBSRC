@@ -99,7 +99,9 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
     const double t0 = now();
     long long fk = up ? fo : fi;                 // kernel sampling rate; cutoff = min(fi,fo)/2
     long long mn = std::min(fi, (long long)fo), gg = std::gcd(mn, fk);
-    std::vector<dd> h = kernel(fk, mn / gg, fk / gg, opt.length, opt.beta); long long Lk = (long long)h.size() - 1;
+    // Near-unity ratios need a finer-grid kernel below. Compute the original reach
+    // without designing taps that would never be used in that path.
+    long long Lk = (int)std::floor(opt.length * (double)fk);
     long long L = (Lk * fi + fk - 1) / fk + 1;   // reach in input samples
     int marg = (int)std::max((L + Q + Q - 1) / Q, up ? (Lk + P + P - 1) / P : 0LL);
     // default thread cap: the pipeline is memory-bandwidth bound beyond a few cores
@@ -148,7 +150,10 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
         std::vector<dd> h2 = kernel_taps((int)std::floor(opt.length * fk2), (long long)(A / g2), (long long)(B / g2), opt.beta);
         H = kernel_spectrum(h2, (int)Nk, (double)Nb);
         Jg = (int)std::min<long long>(Nk / 2, (long long)std::ceil((mn / 2.0 + 4 * fml) * Nb / fi));
-    } else H = kernel_spectrum(h, up ? Mb : Nb, (double)Nb);
+    } else {
+        std::vector<dd> h = kernel(fk, mn / gg, fk / gg, opt.length, opt.beta);
+        H = kernel_spectrum(h, up ? Mb : Nb, (double)Nb);
+    }
     const double t1 = now();
     threads = (int)std::max<long long>(1, std::min<long long>(threads, (long long)ch * ((nblk + 3) / 4)));
     long long o = pre / Q * P;

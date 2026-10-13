@@ -13,7 +13,7 @@ cmake --preset release
 cmake --build --preset release
 ```
 
-The binary is written to `build/release/kbsrc`. The `release` preset tunes for the build machine. Use `portable` for a binary that runs on any CPU of the same architecture: on x86-64 it contains an AVX2 engine and a generic one and picks at run time. The generic engine is about 1.4x slower in exact mode and 1.15x slower in fast mode (1.85 s vs 1.33 s and 0.75 s vs 0.67 s on the benchmark below). Set `KBSRC_CPU=generic` to force it. Output is bit-identical across engines, thread counts, compilers and platforms (checked with MinGW GCC on Windows, GCC and Clang on Linux, and ARM64), because every step uses only IEEE basic operations. On Windows, [w64devkit](https://github.com/skeeto/w64devkit) works out of the box and produces a static `kbsrc.exe`.
+The binary is written to `build/release/kbsrc`. The `release` preset tunes for the build machine. Use `portable` for a binary that runs on any CPU of the same architecture: on x86-64 it contains an AVX2 engine and a generic one and picks at run time. Set `KBSRC_CPU=generic` to force the generic engine. Output is bit-identical across engines, thread counts, compilers and platforms (checked with MinGW GCC on Windows, GCC and Clang on Linux, and ARM64), because every step uses only IEEE basic operations. On Windows, [w64devkit](https://github.com/skeeto/w64devkit) works out of the box and produces a static `kbsrc.exe`.
 
 ## Usage
 
@@ -36,21 +36,23 @@ Input can be 8/16/24/32-bit PCM or 32/64-bit float, with any number of channels.
 
 ## Comparison
 
-All runs were done on one machine (Ryzen 7 5800H, Windows 11). Quality is the Hydrogenaudio balanced score, computed locally with the official test scripts in GNU Octave 11.3. Time is the median of 5 runs converting a 180-second stereo 96 kHz noise file to 44.1 kHz, 64-bit float in and out, wall-clock including file I/O.
+All runs were done on one machine (Ryzen 7 5800H, Windows 11). Time is the median of 5 runs after warm-up, converting a 180-second stereo 96 kHz noise file to 44.1 kHz, 64-bit float in and out, wall-clock including file I/O. All timings were refreshed together on 2026-10-13 at a fixed 3600 MHz using `bench/run.sh`, with the settings shown below. KBSRC uses the portable GCC 16.1 build.
+
+Quality is the Hydrogenaudio balanced score, previously computed locally with the official scripts in GNU Octave 11.3. The current KBSRC build preserves the tested official output bytes in exact and fast modes; its listed scores are carried forward, not newly measured.
 
 | Resampler | Version | Settings | Threads | Score | Time |
 |---|---|---|---|---|---|
-| kbsrc | 1.2.2 | `--mode exact` | 8 | 99.93 | 1.33 s |
-| kbsrc | 1.2.2 | `--mode exact -t 1` | 1 | 99.93 | 4.33 s |
-| kbsrc | 1.2.2 | `--mode fast` | 4 | 99.87 | 0.67 s |
-| kbsrc | 1.2.2 | `--mode fast -t 1` | 1 | 99.87 | 0.83 s |
-| ardftsrc-rs | 0.3.1 | Insane, f64 | default | 99.74 | 2.47 s |
-| ardftsrc-rs | 0.3.1 | Insane, double-double | default | 99.92 | 31.1 s |
-| soxr | 0.1.3 | `SOXR_32_BITQ`, linear phase, 99.5% | 1 | 82.56 | 0.69 s |
-| soxr | 0.1.3 | `SOXR_VHQ`, linear phase, 99.5% | 1 | 81.88 | 0.68 s |
-| SoX | 14.4.2 | `rate -v -L -b 99.5` | 1 | 72.71 | 1.30 s |
-| libsamplerate | 0.2.2 | `SRC_SINC_BEST_QUALITY` | 1 | 68.23 | 14.84 s |
-| speexdsp | 1.2.1 | quality 10, float | 1 | 62.11 | 9.44 s |
+| kbsrc | 1.2.3 | `--mode exact` | 8 | 99.93 | 1.115 s |
+| kbsrc | 1.2.3 | `--mode exact -t 1` | 1 | 99.93 | 2.583 s |
+| kbsrc | 1.2.3 | `--mode fast` | 4 | 99.87 | 0.650 s |
+| kbsrc | 1.2.3 | `--mode fast -t 1` | 1 | 99.87 | 0.808 s |
+| ardftsrc-rs | 0.3.1 | Insane, f64 | default | 99.74 | 2.250 s |
+| ardftsrc-rs | 0.3.1 | Insane, double-double | default | 99.92 | 30.985 s |
+| soxr | 0.1.3 | `SOXR_32_BITQ`, linear phase, 99.5% | 1 | 82.56 | 0.697 s |
+| soxr | 0.1.3 | `SOXR_VHQ`, linear phase, 99.5% | 1 | 81.88 | 0.670 s |
+| SoX | 14.4.2 | `rate -v -L -b 99.5` | 1 | 72.71 | 1.289 s |
+| libsamplerate | 0.2.2 | `SRC_SINC_BEST_QUALITY` | 1 | 68.23 | 14.778 s |
+| speexdsp | 1.2.1 | quality 10, float | 1 | 62.11 | 9.330 s |
 
 "Insane" is `--quality 262144 --bandwidth 0.995 --taper-type kaiser --beta 32 --alias-floor-db 0`, the settings behind dBpoweramp's ARDFTSRC Insane entry. ardftsrc-rs is the official Windows release. Everything else was built from source with GCC 16.1 at `-O3 -march=x86-64-v3`: soxr from tag `0.1.3` (945b592), SoX from tag `sox-14.4.2` (45b161d), and libsamplerate and speexdsp from their release tarballs. The libraries are called through `bench/srcbench.cpp`. Most of the gap in the lower rows comes from the aliasing, impulse, intermodulation and gapless tests.
 

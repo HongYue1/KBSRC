@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(kbsrc VERSION 1.2.2 DESCRIPTION "Kaiser-Bessel fold-back sample-rate converter" LANGUAGES CXX)
+project(kbsrc VERSION 1.2.3 DESCRIPTION "Kaiser-Bessel fold-back sample-rate converter" LANGUAGES CXX)
 
 if(MSVC)
   message(FATAL_ERROR "kbsrc needs GCC or Clang (uses __int128 and x87 long double)")

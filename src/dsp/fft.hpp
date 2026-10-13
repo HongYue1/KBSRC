@@ -197,7 +197,8 @@ static inline long long next_smooth7(long long n) { while (!smooth7(n)) n++; ret
 template <class S, class W = S, class T = S> struct CFFT {
     using LN = Lane<S, T>; static constexpr int NL = LN::N;
     int n = 0, N1 = 0, N2 = 0; bool four = false;
-    SFFT<T, W> s1, s2; SFFT<S, W> sd; std::vector<cx<W>> tw;   // tw[k1*N2+n2] = w_n^{k1 n2}
+    SFFT<T, W> s1, s2; SFFT<S, W> sd; std::vector<cx<W>> tw;   // scalar path: tw[k1*N2+n2] = w_n^{k1 n2}
+    std::vector<cx<T>> lane_tw;   // SIMD path: column-group major, already packed
     // Bluestein (chirp-z) for lengths that are not 7-smooth: b_t = e^{+i pi t^2/n} (exact, t^2 mod 2n)
     int m = 0; std::shared_ptr<CFFT> inner; std::vector<cx<W>> bc, Vf;
     size_t scratch_bytes() const {
@@ -205,7 +206,7 @@ template <class S, class W = S, class T = S> struct CFFT {
         return four ? (size_t)2 * std::max(N1, N2) * sizeof(cx<T>) + 64 : 0;
     }
     void init(int n_) {
-        n = n_; m = 0; inner.reset();
+        n = n_; m = 0; inner.reset(); lane_tw.clear();
         if (!smooth7(n)) {
             m = (int)next_smooth7(2LL * n - 1); inner = std::make_shared<CFFT>(); inner->init(m);
             bc.resize(n); std::vector<cx<dd>> v(m, cx<dd>{dd(0.0), dd(0.0)}), w(m);
@@ -223,6 +224,19 @@ template <class S, class W = S, class T = S> struct CFFT {
         s1.init(N1); s2.init(N2); tw.resize((size_t)n);
         CisTable ct(n);
         for (int k1 = 0; k1 < N1; k1++) for (int n2 = 0; n2 < N2; n2++) { dd c, sn; ct.get(-(long long)k1 * n2, c, sn); tw[(size_t)k1 * N2 + n2] = {from_dd<W>(c), from_dd<W>(sn)}; }
+        if constexpr (NL > 1) {
+            lane_tw.resize((size_t)((N2 + NL - 1) / NL) * N1);
+            const cx<W>* wp[NL];
+            for (int c0 = 0; c0 < N2; c0 += NL) {
+                const int g = std::min(NL, N2 - c0);
+                for (int k1 = 0; k1 < N1; k1++) {
+                    for (int j = 0; j < NL; j++) wp[j] = &tw[(size_t)k1 * N2 + c0 + std::min(j, g - 1)];
+                    lane_tw[(size_t)(c0 / NL) * N1 + k1] = lane_pack<W, T>(wp);
+                }
+            }
+            // Keep only the traversal-ordered representation used by run().
+            std::vector<cx<W>>().swap(tw);
+        }
     }
     // x: input (n, destroyed), y: n, scratch: scratch_bytes(). returns result pointer (x or y).
     cx<S>* run(cx<S>* x, cx<S>* y, void* scratch) const {
@@ -239,7 +253,7 @@ template <class S, class W = S, class T = S> struct CFFT {
         if (!four) return sd.run(x, y);
         const int M = std::max(N1, N2);
         cx<T>* tile = (cx<T>*)scratch; cx<T>* wk = tile + M;
-        const cx<S>* ip[4]; cx<S>* op[4]; const cx<W>* wp[4];
+        const cx<S>* ip[4]; cx<S>* op[4];
         for (int c0 = 0; c0 < N2; c0 += NL) {
             int g = std::min(NL, N2 - c0);
             for (int r = 0; r < N1; r++) { for (int j = 0; j < NL; j++) ip[j] = x + (size_t)r * N2 + c0 + std::min(j, g - 1); tile[r] = lane_pack<S, T>(ip); }
@@ -248,7 +262,7 @@ template <class S, class W = S, class T = S> struct CFFT {
                 cx<T> v = res[k1];
                 if (k1) {
                     if constexpr (NL == 1) { if (c0) v = mulw(v, tw[(size_t)k1 * N2 + c0]); }
-                    else { for (int j = 0; j < NL; j++) wp[j] = &tw[(size_t)k1 * N2 + c0 + std::min(j, g - 1)]; v = v * lane_pack<W, T>(wp); }
+                    else { v = v * lane_tw[(size_t)(c0 / NL) * N1 + k1]; }
                 }
                 for (int j = 0; j < g; j++) op[j] = x + (size_t)k1 * N2 + c0 + j;
                 LN::unpack(v, op, g);
@@ -263,6 +277,41 @@ template <class S, class W = S, class T = S> struct CFFT {
         return y;
     }
 };
+
+// Scalar dd addition has a second low-part two-sum, unlike FFT DD4 addition.
+// Reconstruction must retain that exact operation order for baseline identity.
+static inline DD4 reconstruction_add4(const DD4& a, const DD4& b) {
+#if KBSRC_SIMD_AVX2
+    auto two_sum = [](__m256d x, __m256d y, __m256d& hi, __m256d& lo) {
+        hi = _mm256_add_pd(x, y);
+        __m256d bb = _mm256_sub_pd(hi, x);
+        lo = _mm256_add_pd(_mm256_sub_pd(x, _mm256_sub_pd(hi, bb)), _mm256_sub_pd(y, bb));
+    };
+    __m256d sh, sl, th, tl;
+    two_sum(a.hi, b.hi, sh, sl); two_sum(a.lo, b.lo, th, tl);
+    DD4 t = qts4(sh, _mm256_add_pd(sl, th));
+    return qts4(t.hi, _mm256_add_pd(t.lo, tl));
+#else
+    DD4 r;
+    for (int i = 0; i < 4; i++) {
+        dd v = dd(a.hi[i], a.lo[i]) + dd(b.hi[i], b.lo[i]);
+        r.hi[i] = v.hi; r.lo[i] = v.lo;
+    }
+    return r;
+#endif
+}
+static inline cx<DD4> reconstruction_add4(const cx<DD4>& a, const cx<DD4>& b) {
+    return {reconstruction_add4(a.re, b.re), reconstruction_add4(a.im, b.im)};
+}
+static inline cx<DD4> reconstruction_mul4(const cx<DD4>& a, const cx<DD4>& b) {
+    return {reconstruction_add4(a.re * b.re, -(a.im * b.im)),
+            reconstruction_add4(a.re * b.im, a.im * b.re)};
+}
+static inline void reconstruction_store4(const cx<DD4>& v, cx<dd>* const* out) {
+    double rh[4], rl[4], ih[4], il[4];
+    dd4_store(v.re, rh, rl); dd4_store(v.im, ih, il);
+    for (int i = 0; i < 4; i++) *out[i] = {dd(rh[i], rl[i]), dd(ih[i], il[i])};
+}
 
 template <class T, class W = T, class C = T> struct RFFT {  // real transform of even length N via complex N/2 (C: SIMD compute type)
     int N = 0, h = 0; CFFT<T, W, C> c; std::vector<cx<W>> w;  // w[k] = e^{-2 pi i k/N}
@@ -289,7 +338,27 @@ template <class T, class W = T, class C = T> struct RFFT {  // real transform of
         } else {
             // Conjugate partners share the even/odd split. Keep their own twiddles:
             // table rounding need not make w[h-k] exactly -conj(w[k]).
-            for (int k = 1; k <= h / 2; k++) {
+            int k = 1;
+            if constexpr (std::is_same_v<T, dd> && std::is_same_v<W, dd> && std::is_same_v<C, DD4>) {
+                for (; k + 3 < (h + 1) / 2; k += 4) {
+                    const cx<dd>* ap[4]; const cx<dd>* bp[4];
+                    const cx<dd>* wp[4]; const cx<dd>* jp[4];
+                    cx<dd>* op[4]; cx<dd>* oq[4];
+                    for (int l = 0; l < 4; l++) {
+                        int i = k + l, j = h - i;
+                        ap[l] = z + i; bp[l] = z + j; wp[l] = &w[i]; jp[l] = &w[j];
+                        op[l] = X + i; oq[l] = X + j;
+                    }
+                    cx<DD4> A = Lane<dd, DD4>::packw(ap), B = conj(Lane<dd, DD4>::packw(bp));
+                    cx<DD4> E = reconstruction_add4(A, B);
+                    cx<DD4> O = mul_mi(reconstruction_add4(A, cx<DD4>{-B.re, -B.im}));
+                    cx<DD4> v = reconstruction_add4(E, reconstruction_mul4(O, Lane<dd, DD4>::packw(wp)));
+                    cx<DD4> u = reconstruction_add4(conj(E), reconstruction_mul4(conj(O), Lane<dd, DD4>::packw(jp)));
+                    reconstruction_store4({v.re * DD4(0.5), v.im * DD4(0.5)}, op);
+                    reconstruction_store4({u.re * DD4(0.5), u.im * DD4(0.5)}, oq);
+                }
+            }
+            for (; k <= h / 2; k++) {
                 const int j = h - k;
                 cx<T> A = z[k], B = conj(z[j]);
                 cx<T> E = A + B, O = mul_mi(A - B);   // 2E, 2O
@@ -312,7 +381,32 @@ template <class T, class W = T, class C = T> struct RFFT {  // real transform of
                 z[k] = conj(v);
             }
         } else {
-            for (int k = 0; k <= h / 2; k++) {
+            int k = 0;
+            if constexpr (std::is_same_v<T, dd> && std::is_same_v<W, dd> && std::is_same_v<C, DD4>) {
+                cx<T> A = X[0], B = conj(X[h]);
+                cx<T> E = A + B, D = mulw(A - B, conj(w[0]));
+                z[0] = conj(cx<T>{E.re - D.im, E.im + D.re});
+                k = 1;
+                for (; k + 3 < (h + 1) / 2; k += 4) {
+                    const cx<dd>* ap[4]; const cx<dd>* bp[4];
+                    const cx<dd>* wp[4]; const cx<dd>* jp[4];
+                    cx<dd>* op[4]; cx<dd>* oq[4];
+                    for (int l = 0; l < 4; l++) {
+                        int i = k + l, j = h - i;
+                        ap[l] = X + i; bp[l] = X + j; wp[l] = &w[i]; jp[l] = &w[j];
+                        op[l] = z + i; oq[l] = z + j;
+                    }
+                    cx<DD4> A = Lane<dd, DD4>::packw(ap), B = conj(Lane<dd, DD4>::packw(bp));
+                    cx<DD4> E = reconstruction_add4(A, B), split = reconstruction_add4(A, cx<DD4>{-B.re, -B.im});
+                    cx<DD4> D = reconstruction_mul4(split, conj(Lane<dd, DD4>::packw(wp)));
+                    cx<DD4> Dj = reconstruction_mul4(cx<DD4>{-split.re, split.im}, conj(Lane<dd, DD4>::packw(jp)));
+                    cx<DD4> v = {reconstruction_add4(E.re, -D.im), reconstruction_add4(E.im, D.re)};
+                    cx<DD4> Ej = conj(E);
+                    cx<DD4> u = {reconstruction_add4(Ej.re, -Dj.im), reconstruction_add4(Ej.im, Dj.re)};
+                    reconstruction_store4(conj(v), op); reconstruction_store4(conj(u), oq);
+                }
+            }
+            for (; k <= h / 2; k++) {
                 const int j = h - k;
                 cx<T> A = X[k], B = conj(X[j]);
                 cx<T> E = A + B, split = A - B;
