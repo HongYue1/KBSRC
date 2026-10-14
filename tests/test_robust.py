@@ -30,6 +30,7 @@ BAD_CHANNELS = "invalid WAV channel count"
 BAD_RATE = "invalid WAV sample rate"
 WIDE_FRAME = "too many channels for a WAV file in this format"
 FAST_BYTES = "sample rate too high for a WAV file with this many channels"
+INPUT_RATE = "input sample rate above 10000000 Hz"
 
 
 class Checker:
@@ -170,12 +171,15 @@ def main():
         rejected("--len 5.8e-4 --beta 80 48k -> 44.1k", TOO_SHORT, src, "--rate", 44100, "--len", "5.8e-4",
                  "--beta", 80)
         converts("--len 10 48k -> 16k (longest kernel)", src, "--rate", 16000, "--len", 10, plan=["taps=960001"])
-        # A WAV header can carry any rate: at 2 GHz a 10 s kernel has too many samples for an int, and at the
-        # prime 2147483647 Hz the transforms of P/Q = 48000/2147483647 cannot fit.
-        hi = write("f64_2ghz", wav(3, 2, 2000000000, 64, 16, struct.pack("<%dd" % len(x), *x)))
-        rejected("2 GHz input, --len 10", OUT_OF_RANGE, hi, "--rate", 48000, "--len", 10, timeout=60)
-        prime = write("f64_prime", wav(3, 2, 2147483647, 64, 16, struct.pack("<%dd" % len(x), *x)))
-        rejected("2147483647 Hz input", TOO_LARGE, prime, "--rate", 48000, timeout=60)
+        # A WAV header can carry any rate below 2^31; the input rate has the same 10 MHz limit as --rate.
+        for rate in (10000001, 2000000000, 2147483647):
+            hi = write("f64_high_rate", wav(3, 2, rate, 64, 16, struct.pack("<%dd" % len(x), *x)))
+            rejected(f"{rate} Hz input", INPUT_RATE, hi, "--rate", 48000, timeout=60)
+        top = write("f64_10mhz", wav(3, 2, 10000000, 64, 16, struct.pack("<%dd" % len(x), *x)))
+        converts("10000000 Hz input, --len 0.001", top, "--rate", 48000, "--len", "0.001", "--mode", "fast")
+        # Equal rates copy the input; the plan line still names the engine and the one thread used.
+        converts("48k -> 48k", src, "--rate", 48000, plan=["P/Q=1/1", "threads=1", "engine=generic"],
+                 engine="generic")
 
         # WAV headers. PCM is decoded by container size (block alignment / channels), so the declared bits per
         # sample must need exactly that many bytes; float samples are 4 or 8 bytes.

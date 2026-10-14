@@ -27,7 +27,7 @@ kbsrc input.wav output.wav --rate 48000
 | `-m, --mode M` | `exact` | `exact` (double-double), `fast` (float64) or `ld` (x87 80-bit) |
 | `-f, --format F` | `f64` | `f64`, `f32`, `s32`, `s24` or `s16` |
 | `--dither` | off | TPDF dither for integer output |
-| `-t, --threads N` | 8 (exact), 4 (fast) | worker threads |
+| `-t, --threads N` | up to 8 (4 for `fast`) | worker threads |
 | `--len S`, `--beta B` | 0.2, 40 | kernel half-length in seconds, Kaiser beta |
 | `--no-lpc` | | zero-pad the edges instead of extrapolating them |
 | `-v` | | print the plan and timings |

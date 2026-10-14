@@ -3,6 +3,8 @@
 #include <cmath>
 #include <cstdio>
 #include <exception>
+#include <new>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -44,7 +46,7 @@ void print_help() {
         "  -m, --mode M        exact (default), fast or ld\n"
         "  -f, --format F      f64 (default), f32, s32, s24 or s16\n"
         "      --dither        TPDF dither for integer formats\n"
-        "  -t, --threads N     worker threads (default: 8 for exact, 4 for fast)\n"
+        "  -t, --threads N     worker threads (default: up to 8; up to 4 for fast)\n"
         "      --len S         one-sided kernel length in seconds (default 0.2)\n"
         "      --beta B        Kaiser beta (default 40)\n"
         "      --block N       block size factor (default: automatic)\n"
@@ -61,15 +63,17 @@ std::vector<std::string> utf8_args(int argc, char** argv) {
 #ifdef _WIN32
     int wc = 0;
     if (LPWSTR* wv = CommandLineToArgvW(GetCommandLineW(), &wc)) {
-        for (int i = 0; i < wc; i++) {
+        bool ok = true;
+        for (int i = 0; i < wc && ok; i++) {
             int n = WideCharToMultiByte(CP_UTF8, 0, wv[i], -1, nullptr, 0, nullptr, nullptr);
-            std::string u(n, '\0');
-            WideCharToMultiByte(CP_UTF8, 0, wv[i], -1, u.data(), n, nullptr, nullptr);
-            u.resize(n - 1);
+            std::string u(n > 0 ? n : 1, '\0');
+            ok = n > 0 && WideCharToMultiByte(CP_UTF8, 0, wv[i], -1, u.data(), n, nullptr, nullptr) == n;
+            u.resize(ok ? n - 1 : 0);
             args.push_back(std::move(u));
         }
         LocalFree(wv);
-        return args;
+        if (ok) return args;
+        args.clear();   // fall back to the narrow arguments
     }
 #endif
     for (int i = 0; i < argc; i++) args.emplace_back(argv[i]);
@@ -118,6 +122,8 @@ int run(const std::vector<std::string>& args) {
 
     const double t0 = now();
     kbsrc::io::Audio a = kbsrc::io::read_wav(in_path.c_str());
+    // Same range as --rate: a header can claim any rate, and the kernel length grows with it.
+    if (a.rate > 10000000) throw std::runtime_error("input sample rate above 10000000 Hz");
     kbsrc::io::check_wav_output(a.ch, rate, format);   // fail before converting, not after
     const double t1 = now();
     kbsrc::Stats st;
@@ -148,6 +154,9 @@ int main(int argc, char** argv) {
     } catch (const UsageError& e) {
         std::fprintf(stderr, "kbsrc: %s (see --help)\n", e.what());
         return 2;
+    } catch (const std::bad_alloc&) {
+        std::fprintf(stderr, "kbsrc: out of memory\n");
+        return 1;
     } catch (const std::exception& e) {
         std::fprintf(stderr, "kbsrc: %s\n", e.what());
         return 1;

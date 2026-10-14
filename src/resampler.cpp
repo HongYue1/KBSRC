@@ -104,7 +104,7 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
     if (fo == fi) {
         std::vector<std::vector<double>> out(ch, std::vector<double>(nout));
         for (int c = 0; c < ch; c++) for (long long i = 0; i < nin; i++) out[c][i] = in[i * ch + c];
-        if (stats) { stats->p = P; stats->q = Q; }
+        if (stats) { stats->isa = simd_name; stats->p = P; stats->q = Q; stats->threads = 1; }
         return out;
     }
     const double t0 = now();
