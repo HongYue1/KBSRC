@@ -98,8 +98,8 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
     std::vector<std::vector<double>> out(ch, std::vector<double>(nout));
     if (fo == fi) { for (int c = 0; c < ch; c++) for (long long i = 0; i < nin; i++) out[c][i] = in[i * ch + c]; if (stats) { stats->p = P; stats->q = Q; } return out; }
     const double t0 = now();
-    long long fk = up ? fo : fi;                 // kernel sampling rate; cutoff = min(fi,fo)/2
-    long long mn = std::min(fi, (long long)fo), gg = std::gcd(mn, fk);
+    long long fk = up ? fo : fi;                 // kernel sampling rate
+    long long mn = std::min(fi, (long long)fo);  // lower rate: its Nyquist frequency mn/2 bounds the passband
     // Near-unity ratios need a finer-grid kernel below. Compute the original reach
     // without designing taps that would never be used in that path.
     // Lk = one-sided kernel length in kernel samples. A length shorter than one kernel sample would collapse the
@@ -107,6 +107,14 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
     const double lk = std::floor(opt.length * (double)fk);
     if (!(lk >= 1 && lk <= INT_MAX)) throw std::invalid_argument("option out of range");
     long long Lk = (long long)lk;
+    // The Kaiser window's main lobe makes the transition band 2 * fml Hz wide, centred on the cutoff. The cutoff
+    // sits ceil(2 * fml) / 2 Hz below the lower Nyquist frequency, so the transition band ends at or just below
+    // it: nothing above it is folded back into the output (downsampling) or passed as an image (upsampling) above
+    // the stopband level. c2 is twice the cutoff in Hz. A kernel too short to leave a passband is rejected.
+    const double fml = std::sqrt(opt.beta * opt.beta + 9.8696044010893586) / (2 * 3.14159265358979323846 * opt.length);
+    const double drop = std::ceil(2 * fml);
+    if (!((double)mn - drop > 2 * fml)) throw std::invalid_argument("length too short for these sample rates");
+    const long long c2 = mn - (long long)drop, gc = std::gcd(c2, fk);
     long long L = (Lk * fi + fk - 1) / fk + 1;   // reach in input samples
     long long margl = std::max((L + Q + Q - 1) / Q, up ? (Lk + P + P - 1) / P : 0LL);
     // Transform sizes block * Q and block * P are ints, and the finer kernel grid needs 5/4 of the larger one:
@@ -151,20 +159,20 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
     // If the transition (fc +- main-lobe half-width) comes close to the kernel's own Nyquist (near-unity ratios),
     // the fi/fo-sampled kernel spectrum is aliased onto itself. Then sample the kernel on a finer grid Nk (rate Nk*df)
     // so G is the true continuous response, and fold every bin modulo Mb in the engine (exact for any ratio).
-    double fml = std::sqrt(opt.beta * opt.beta + 9.8696044010893586) / (2 * 3.14159265358979323846 * opt.length);
     bool gen = (double)(std::max(fi, (long long)fo) - mn) / 2 < 3 * fml;
     int Jg = 0; std::vector<dd> H;
     if (gen) {
         long long Nk = std::max(Nb, Mb) * 5LL / 4; Nk += Nk & 1; while (!smooth7(Nk / 2)) Nk += 2;
-        // kernel rate fk2 = Nk*df, df = fi/Nb; relative cutoff (mn/2)/(fk2/2) = mn*Nb/(Nk*fi)
-        __int128 A = (__int128)mn * Nb, B = (__int128)Nk * fi;
-        long long g2 = (long long)std::gcd((unsigned long long)mn * (unsigned long long)Nb, (unsigned long long)Nk * (unsigned long long)fi);
+        // kernel rate fk2 = Nk*df, df = fi/Nb; relative cutoff (c2/2)/(fk2/2) = c2*Nb/(Nk*fi)
+        __int128 A = (__int128)c2 * Nb, B = (__int128)Nk * fi;
+        long long g2 = (long long)std::gcd((unsigned long long)c2 * (unsigned long long)Nb,
+                                           (unsigned long long)Nk * (unsigned long long)fi);
         double fk2 = (double)Nk * fi / Nb;
         std::vector<dd> h2 = kernel_taps((int)std::floor(opt.length * fk2), (long long)(A / g2), (long long)(B / g2), opt.beta);
         H = kernel_spectrum(h2, (int)Nk, (double)Nb);
         Jg = (int)std::min<long long>(Nk / 2, (long long)std::ceil((mn / 2.0 + 4 * fml) * Nb / fi));
     } else {
-        std::vector<dd> h = kernel(fk, mn / gg, fk / gg, opt.length, opt.beta);
+        std::vector<dd> h = kernel(fk, c2 / gc, fk / gc, opt.length, opt.beta);
         H = kernel_spectrum(h, up ? Mb : Nb, (double)Nb);
     }
     const double t1 = now();
@@ -179,6 +187,7 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
         stats->isa = simd_name;
         stats->p = P; stats->q = Q; stats->taps = 2 * Lk + 1; stats->block = nb; stats->threads = threads;
         stats->general_fold = Jg != 0; stats->design_seconds = t1 - t0; stats->process_seconds = now() - t1;
+        stats->passband = (double)c2 / 2 - fml; stats->stopband = (double)c2 / 2 + fml;
     }
     return out;
 }

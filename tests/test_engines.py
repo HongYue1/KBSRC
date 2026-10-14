@@ -26,16 +26,16 @@ import tempfile
 PRIMARY_WAV = "59c2fbaef9de2e52113f766058c3cc8d9cdac07fab7839c3666cf7600a34d5fe"
 SUBNORMAL_WAV = "83d27bd8fb3438a12503cd1c0a9e78a1c980917ab4c808d226f14aca1b5a8f12"
 CLI_PINS = [  # input, rate, --mode, sha256 of the output WAV, pinned only on x86-64 (x87 long double)
-    ("primary", 96000, "exact", "9afcc8ff7dcfc7803f8be6d0bf1fa2f9952675e8f08601b465a174c43a49fdd4", False),
-    ("primary", 96000, "ld", "9afcc8ff7dcfc7803f8be6d0bf1fa2f9952675e8f08601b465a174c43a49fdd4", True),
-    ("primary", 96000, "fast", "3a75f75cdc99a4ab3fc4a9b09fafa4282d4f45bad5759f87d7c886fc2638c62c", False),
-    ("primary", 44100, "exact", "55b5cec9c5ca9cff0c1d701a28d1ff2892e6dee0c92e56dc45488abf8c6179ea", False),
-    ("subnormal", 96000, "exact", "89b6f9bc3f72b12d04e17f44ae43478a3ab96dcdf7ba534096cf443137690455", False),
-    ("subnormal", 44100, "exact", "2718a0643dc9d62a218c2cf6400566b64045d846871be8f34a43cbe54a4942be", False),
+    ("primary", 96000, "exact", "355d557004d979d59358252264c63e689a136b51103c4390b2985a1c85f8398b", False),
+    ("primary", 96000, "ld", "c55bae01612386ce25ad884afcc9f1223b19237d13debdeea508a0bc078edfdd", True),
+    ("primary", 96000, "fast", "5096742b492273bf1b7bd3db41e9554e0993d4144a3c9d6d92cf89e11d91f7a5", False),
+    ("primary", 44100, "exact", "752c3fe855e795ecbba79e83aaf00cfe47fa09c9d4905d2e3e61235197dc1ccc", False),
+    ("subnormal", 96000, "exact", "90ae0178d5ae1fea6505f0c03c130a6ddb3a880d2b74ad21dd25cf53dc5e7fea", False),
+    ("subnormal", 44100, "exact", "0a03683c6809085e3d1d2e926d21aa3faec9aecc3db66590f501c68440b7bef2", False),
 ]
-SUBNORMAL_96K_PLANAR = "0fb045c122fb694abe5917200eb9b038eb7514d73479c5aeef2b69f439569773"
+SUBNORMAL_96K_PLANAR = "b1a721cde705af8f2a055dc45dc4575a46b29999f48da18ae4da590a04d8c7c3"
 FRAME1 = (-0.5955104827880859, 0.11259841918945312)
-FRAME1_OUT = ["bfe30e6c00000000", "bfd83e9c1e77beb6", "3fbcd34000000000", "3fb2562762c4bec4"]
+FRAME1_OUT = ["bfe003180f1a9fbe", "bfd77c39344e9ed3", "3fb8386a3126e979", "3fb1c322eee114b9"]
 MODES = ["nearest", "down", "up", "zero"]
 X86_64 = platform.machine().lower() in ("x86_64", "amd64", "x64")
 

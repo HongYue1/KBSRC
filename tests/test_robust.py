@@ -1,10 +1,11 @@
 """Rejected options and malformed WAV headers must fail cleanly; valid neighbours must still convert.
 
 Covers block sizes (an explicit --block at or below twice the kernel margin crashed the process, and huge blocks
-overflowed the int transform sizes), kernel lengths (a --len shorter than one kernel sample was accepted and gave
-nonfinite output) and the WAV header checks (a PCM header with 0 bits per sample was accepted, and so was an IEEE
-float header whose sample size disagrees with the block alignment). A rejection must exit with status 1, print
-"kbsrc: <reason>" and write no output file. Stdlib only: it does not import common.py, which needs numpy.
+overflowed the int transform sizes), kernel lengths (shorter than one kernel sample, or too short for the transition
+band to fit below the lower Nyquist frequency) and the WAV header checks (a PCM header with 0 bits per sample was
+accepted, and so was an IEEE float header whose sample size disagrees with the block alignment). A rejection must
+exit with status 1, print "kbsrc: <reason>" and write no output file. Stdlib only: it does not import common.py,
+which needs numpy.
 
 Usage: test_robust.py --bin <kbsrc>
 """
@@ -21,6 +22,7 @@ ENGINES = {"default": None, "generic": "generic"}  # engine label -> KBSRC_CPU
 MODES = ["exact", "fast", "ld"]
 OUT_OF_RANGE = "option out of range"
 TOO_LARGE = "block, rates or length too large"
+TOO_SHORT = "length too short for these sample rates"
 PCM_WIDTH = "unsupported PCM width"
 FLOAT_SIZE = "IEEE float sample size does not match the block alignment"
 
@@ -118,35 +120,44 @@ def main():
         x = [rng.uniform(-0.5, 0.5) for _ in range(2 * 64)]
         src = write("f64_48k", wav(3, 2, 48000, 64, 16, struct.pack("<%dd" % len(x), *x)))
 
-        # --block: at 48 kHz -> 96 kHz with the default --len 0.1 the kernel margin is 4802 frames. Blocks up to
-        # 2 * 4802 = 9604 leave no hop; 9605 is the smallest accepted value and is rounded up to 9720 (7-smooth).
+        # --block: at 48 kHz -> 96 kHz with --len 0.1 the kernel margin is 4802 frames. Blocks up to 2 * 4802 =
+        # 9604 leave no hop; 9605 is the smallest accepted value and is rounded up to 9720 (7-smooth).
         for engine in ENGINES:
             for mode in MODES:
                 for block in (1, 1000, 9604):
                     rejected(f"--block {block} {mode} [{engine}]", OUT_OF_RANGE, src, "--rate", 96000,
-                             "--mode", mode, "--block", block, engine=engine)
+                             "--mode", mode, "--len", "0.1", "--block", block, engine=engine)
                 converts(f"--block 9605 {mode} [{engine}]", src, "--rate", 96000, "--mode", mode,
-                         "--block", 9605, plan=["block=9720"], engine=engine)
+                         "--len", "0.1", "--block", 9605, plan=["block=9720"], engine=engine)
         converts("automatic block", src, "--rate", 96000)
-        converts("--block 20000", src, "--rate", 96000, "--block", 20000, plan=["block=20000"])
+        converts("--block 20000", src, "--rate", 96000, "--len", "0.1", "--block", 20000, plan=["block=20000"])
         # Transform sizes are block * P and block * Q (here P/Q = 2/1) and must stay well inside int: such blocks
         # used to run for minutes, fail to allocate or overflow.
         for block in (536870912, 2147483647):
             rejected(f"--block {block}", TOO_LARGE, src, "--rate", 96000, "--block", block, timeout=60)
 
-        # --len is the one-sided kernel length in seconds, sampled at the higher rate (here 96 kHz):
-        # 1e-5 s is 0.96 samples and leaves no kernel, 1.1e-5 s is one sample (3 taps).
+        # --len is the one-sided kernel length in seconds, sampled at the higher rate (here 96 kHz): 1e-5 s is
+        # 0.96 samples and leaves no kernel. The transition band is 2 * fml wide, fml = sqrt(beta^2 + pi^2) /
+        # (2 pi len), and must fit below the lower Nyquist frequency with room for a passband, 4 * fml < 48000 Hz:
+        # len > 5.3215e-4 s with the default beta 40. 5.33e-4 s is 51 kernel samples (103 taps).
         for engine in ENGINES:
             for mode in MODES:
                 rejected(f"--len 1e-5 {mode} [{engine}]", OUT_OF_RANGE, src, "--rate", 96000, "--mode", mode,
                          "--len", "1e-5", engine=engine)
-                converts(f"--len 1.1e-5 {mode} [{engine}]", src, "--rate", 96000, "--mode", mode,
-                         "--len", "1.1e-5", plan=["taps=3"], engine=engine)
+                rejected(f"--len 5.3e-4 {mode} [{engine}]", TOO_SHORT, src, "--rate", 96000, "--mode", mode,
+                         "--len", "5.3e-4", engine=engine)
+                converts(f"--len 5.33e-4 {mode} [{engine}]", src, "--rate", 96000, "--mode", mode,
+                         "--len", "5.33e-4", plan=["taps=103"], engine=engine)
         for length in ("1e-8", "0", "-0.1", "10.5"):
             rejected(f"--len {length}", OUT_OF_RANGE, src, "--rate", 96000, "--len", length)
-        # downsampling samples the kernel at the input rate (48 kHz): 2e-5 s is 0.96 samples
+        # Downsampling samples the kernel at the input rate (48 kHz): 2e-5 s is 0.96 samples. The lower Nyquist
+        # frequency is 22050 Hz: len > 5.7921e-4 s; 5.8e-4 s is 27 kernel samples (55 taps).
         rejected("--len 2e-5 48k -> 44.1k", OUT_OF_RANGE, src, "--rate", 44100, "--len", "2e-5")
-        converts("--len 2.1e-5 48k -> 44.1k", src, "--rate", 44100, "--len", "2.1e-5", plan=["taps=3"])
+        rejected("--len 5.79e-4 48k -> 44.1k", TOO_SHORT, src, "--rate", 44100, "--len", "5.79e-4")
+        converts("--len 5.8e-4 48k -> 44.1k", src, "--rate", 44100, "--len", "5.8e-4", plan=["taps=55"])
+        # A larger beta widens the transition band: at beta 80 the 5.8e-4 s kernel no longer fits.
+        rejected("--len 5.8e-4 --beta 80 48k -> 44.1k", TOO_SHORT, src, "--rate", 44100, "--len", "5.8e-4",
+                 "--beta", 80)
         converts("--len 10 48k -> 16k (longest kernel)", src, "--rate", 16000, "--len", 10, plan=["taps=960001"])
         # A WAV header can carry any rate: at 2 GHz a 10 s kernel has too many samples for an int, and at the
         # prime 2147483647 Hz the transforms of P/Q = 48000/2147483647 cannot fit.

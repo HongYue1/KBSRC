@@ -1,4 +1,4 @@
-// KBSRC - Kaiser-Bessel fold-back sample-rate converter
+// KBSRC - Kaiser-Bessel sample-rate converter
 #pragma once
 
 #include <vector>
@@ -13,7 +13,7 @@ enum class Precision {
 
 struct Options {
     Precision precision = Precision::Exact;
-    double length = 0.1;    // one-sided kernel length, seconds
+    double length = 0.2;    // one-sided kernel length, seconds; the transition band is inversely proportional
     double beta = 40.0;     // Kaiser window beta
     int threads = 0;        // 0 = automatic
     int block = 0;          // block size factor, 0 = automatic
@@ -26,6 +26,7 @@ struct Stats {
     int block = 0, threads = 0;
     bool general_fold = false;  // near-unity ratio path
     double design_seconds = 0, process_seconds = 0;
+    double passband = 0, stopband = 0;  // band edges in Hz: flat up to passband, stopband from stopband on
     const char* isa = "";       // engine used: "avx2" or "generic" (identical output)
 };
 

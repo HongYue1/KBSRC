@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
-"""KBSRC - Kaiser-Bessel fold-back sample-rate converter.
+"""KBSRC - Kaiser-Bessel sample-rate converter, NumPy reference implementation.
 
 Design (see README):
-  * Closed-form "double Kaiser" kernel: ideal low-pass whose band edge is smeared by a
-    Kaiser(kb) window *in frequency* (=> exact sinc * sinh(sqrt(kb^2-(pi B t)^2))/.. pair),
-    truncated by a Kaiser(beta) window *in time*.  No numerical filter design needed.
-  * Transition band of width B centred exactly on the output Nyquist; the part above
-    Nyquist is folded back bin-exactly (aliases confined to +-B/2 around fs/2), so the
-    passband is flat to 22.05 kHz.
-  * Block overlap-save DFT resampling with block lengths that are integer multiples of the
-    reduced ratio (exact phase, zero delay, streamable), batched multi-block FFTs.
-  * Precision modes: 'fast' (float64 FFT) or 'exact' (80-bit extended FFT; output limited
-    only by float64 output rounding).
+  * Kaiser-windowed sinc kernel, sampled at the higher of the two rates. The window's main lobe makes the
+    transition band 2*w Hz wide, w = sqrt(beta^2 + pi^2) / (2 pi T). The cutoff sits ceil(2*w)/2 Hz below
+    the lower Nyquist frequency, so the transition band ends at or just below it.
+  * Block overlap-save DFT resampling with block lengths that are integer multiples of the reduced ratio
+    (exact phase, zero delay). Downsampling folds the bins above the output Nyquist back, exactly as sampling
+    at the lower rate does; they lie in the stopband. Upsampling extends the input spectrum periodically.
+  * Precision modes: 'fast' (float64 FFT) or 'exact' (80-bit extended FFT; output limited only by float64
+    output rounding).
   * Burg-LPC edge extrapolation at file ends (no edge transients, gapless-friendly).
 """
 import numpy as np, scipy.fft as F, math, sys, os, argparse
@@ -26,20 +24,6 @@ def _i0(x):
         t = t*q/(k*k); s += t
         if np.all(t < s*LD(1e-22)): break
     return s
-
-def kernel(fs, fc, B, half, beta, kb):
-    """one-sided taps h[0..L] (long double) of the analytic kernel / fs"""
-    key = (fs, fc, B, half, beta, kb)
-    if key in _KC: return _KC[key]
-    L = int(math.floor(half*fs)); n = np.arange(0, L+1).astype(LD); t = n/LD(fs)
-    x = 2*LD(fc)*t; kb = LD(kb)
-    with np.errstate(all='ignore'):
-        s = np.where(n == 0, LD(1), np.sin(PI*x)/(PI*x))
-        a = PI*LD(B)*t; z2 = kb*kb-a*a; z = np.sqrt(np.abs(z2))
-        r = np.where(z2 > 0, np.sinh(z)/z, np.where(z > 0, np.sin(z)/z, LD(1)))/(np.sinh(kb)/kb)
-    u = n/LD(L); w = _i0(LD(beta)*np.sqrt(np.clip(1-u*u, 0, None)))/_i0(LD(beta))
-    h = 2*LD(fc)*s*r*w/LD(fs)
-    _KC[key] = h; return h
 
 def kernel_kw(fs, fc, T, beta):
     """classic Kaiser-windowed sinc, long double: one-sided taps"""
@@ -77,16 +61,18 @@ def _extrap(x, n, order=32, train=4096):
     if not np.all(np.isfinite(out)) or np.max(np.abs(out)) > 4*np.max(np.abs(seg)): return np.zeros(n)
     return out
 
-def resample(x, fi, fo, mode='exact', design='kw', T=0.1, tb=40.0, B=110.0, half=0.29, beta=38.0, kb=32.0, nb=None, lpc=True, batch=6, workers=-1):
+def resample(x, fi, fo, mode='exact', T=0.2, tb=40.0, nb=None, lpc=True, batch=6, workers=-1):
     """x: (n,) or (n, ch) float array -> (ceil(n*fo/fi), ch) float64"""
     x = np.asarray(x, np.float64); one = x.ndim == 1
     if one: x = x[:, None]
     r = Fraction(fo, fi); P, Q = r.numerator, r.denominator
     DT = LD if mode == 'exact' else np.float64; CT = np.clongdouble if mode == 'exact' else np.complex128
-    ny = min(fi, fo)/2
     up = fo > fi
     fk = fo if up else fi                                  # rate at which the kernel is sampled
-    h = kernel_kw(fk, ny, T, tb) if design == 'kw' else kernel(fk, ny, B, half, beta, kb); Lk = len(h)-1
+    w = math.sqrt(tb*tb + 9.8696044010893586)/(2*3.14159265358979323846*T)   # main-lobe half-width, Hz
+    drop = math.ceil(2*w)                                  # cutoff = (min(fi, fo) - drop) / 2, as in the C++ code
+    if not min(fi, fo) - drop > 2*w: raise ValueError('length too short for these sample rates')
+    h = kernel_kw(fk, (min(fi, fo) - drop)/2, T, tb); Lk = len(h)-1
     L = -(-Lk*fi//fk)+1                                    # kernel reach in input samples
     marg = max(-(-(L+Q)//Q), -(-(Lk+P)//P) if up else 0)   # reach in units of Q input / P output samples
     if nb is None: nb = (10 if mode == 'fast' else 20)*marg

@@ -36,7 +36,7 @@ double to_double(const std::string& v, const char* name) {
 
 void print_help() {
     std::printf(
-        "kbsrc %s - Kaiser-Bessel fold-back sample-rate converter\n"
+        "kbsrc %s - Kaiser-Bessel sample-rate converter\n"
         "\n"
         "usage: kbsrc [options] input.wav output.wav\n"
         "\n"
@@ -45,7 +45,7 @@ void print_help() {
         "  -f, --format F      f64 (default), f32, s32, s24 or s16\n"
         "      --dither        TPDF dither for integer formats\n"
         "  -t, --threads N     worker threads (default: 8 for exact, 4 for fast)\n"
-        "      --len S         one-sided kernel length in seconds (default 0.1)\n"
+        "      --len S         one-sided kernel length in seconds (default 0.2)\n"
         "      --beta B        Kaiser beta (default 40)\n"
         "      --block N       block size factor (default: automatic)\n"
         "      --no-lpc        zero-pad edges instead of LPC extrapolation\n"
@@ -131,6 +131,8 @@ int run(const std::vector<std::string>& args) {
         std::fprintf(stderr, "%d Hz -> %d Hz, %d ch, %lld -> %lld frames\n", a.rate, rate, a.ch, a.frames, nout);
         std::fprintf(stderr, "P/Q=%lld/%lld taps=%lld block=%d threads=%d engine=%s%s\n", st.p, st.q, st.taps, st.block,
                      st.threads, st.isa, st.general_fold ? " (general fold)" : "");
+        if (st.stopband > 0)
+            std::fprintf(stderr, "passband 0-%.1f Hz, stopband from %.1f Hz\n", st.passband, st.stopband);
         std::fprintf(stderr, "read %.3fs  design %.3fs  resample %.3fs  write %.3fs  total %.3fs\n", t1 - t0,
                      st.design_seconds, t2 - t1 - st.design_seconds, t3 - t2, t3 - t0);
     }

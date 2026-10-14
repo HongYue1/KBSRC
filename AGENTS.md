@@ -45,6 +45,7 @@ ctest --test-dir build/portable --output-on-failure      # or: ctest --preset re
 | `engines` | Python 3 standard library, `kbsrc_fenv_driver` | pinned outputs; engine, rounding-mode, thread identity |
 | `formats` | NumPy | WAV formats, edge cases, command-line errors |
 | `rates` | NumPy | sine accuracy over common, odd and near-unity ratios |
+| `alias` | NumPy | nothing at or above the lower Nyquist frequency passes the filter (no aliasing or imaging) |
 | `reference` | NumPy, SciPy, `tests/data/` | agreement with `reference/python` on the Hydrogenaudio test WAVs |
 | `isa` | Python 3 standard library, objdump | portable x86-64 only: no AVX instruction outside the AVX2 engine |
 
@@ -54,10 +55,22 @@ ctest --test-dir build/portable --output-on-failure      # or: ctest --preset re
   `uv run --no-project --with numpy,scipy python tests/test_rates.py --bin build/portable/kbsrc.exe`.
 - `reference` needs the 64-bit float WAVs of the Hydrogenaudio test pack in `tests/data/` (`KBSRC_TEST_DATA`
   overrides the path) and reports a skip without them; read its output, a passing CTest row may be a skip.
-  With GCC 16.1 on Windows four checks currently exceed their limits: gaplesstest_s exact (5.6e-15),
-  sweep_1_to_44KHz fast and exact (5.7e-6) and aliasing150db exact (5.5e-15). Treat any other failure as a
+  With GCC 16.1 on Windows four checks currently exceed their limits: gaplesstest_s exact (5.4e-15),
+  sweep_1_to_44KHz fast and exact (5.7e-6) and aliasing150db exact (8.4e-15). Treat any other failure as a
   regression, and a change in these values as a change of output that needs an explanation.
 - Run every suite on Release and on a Debug build with both engines before committing a code change.
+
+## Filter
+
+- The kernel is a Kaiser-windowed sinc whose transition band is 2 * fml wide, fml = sqrt(beta^2 + pi^2) /
+  (2 pi len). It must end at or below the lower Nyquist frequency, so nothing above that frequency is folded
+  back into the output (downsampling) or passed as an image (upsampling) above the stopband level. Do not move
+  the cutoff up to gain bandwidth; `alias` measures the response the way the Hydrogenaudio impulse test does.
+- The defaults (`--len 0.2`, `--beta 40`) give the best Hydrogenaudio balanced score under that rule: shorter
+  kernels lose bandwidth, longer ones ring longer after a sweep crosses the cutoff (spectrogram test), and
+  beyond about 0.29 s a kernel overlaps the neighbouring impulses of the impulse test, which are 0.6 s apart.
+  A lower beta narrows the transition band but raises the stopband near the Nyquist frequency. Change the
+  defaults only with scores measured by `bench/score.sh`.
 
 ## Numerical rules
 

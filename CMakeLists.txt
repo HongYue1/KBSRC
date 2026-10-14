@@ -92,6 +92,8 @@ if(KBSRC_BUILD_TESTS)
     add_test(NAME rates COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/tests/test_rates.py --bin $<TARGET_FILE:kbsrc>)
     add_test(NAME formats COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/tests/test_formats.py --bin $<TARGET_FILE:kbsrc>)
     add_test(NAME robust COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/tests/test_robust.py --bin $<TARGET_FILE:kbsrc>)
+    add_test(NAME alias COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/tests/test_alias.py
+             --bin $<TARGET_FILE:kbsrc>)
     add_test(NAME reference COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/tests/test_reference.py
              --bin $<TARGET_FILE:kbsrc> --data ${KBSRC_TEST_DATA})
     # Engine identity and rounding-mode independence of Exact; the driver calls the library with the caller in a

@@ -1,8 +1,8 @@
 # KBSRC
 
-An FFT sample-rate converter for WAV files. It filters with a Kaiser-windowed sinc whose transition band is centred on the output Nyquist frequency, and it runs in double-double (~106-bit) arithmetic by default.
+An FFT sample-rate converter for WAV files. It filters with a Kaiser-windowed sinc whose transition band ends at the lower of the two Nyquist frequencies, so nothing above it aliases or images, and it runs in double-double (~106-bit) arithmetic by default.
 
-The approach follows [ARDFTSRC](https://github.com/mrspoonsi/ARDFTSRC): DFT-domain rational resampling with a Kaiser taper that straddles the output Nyquist. KBSRC is an independent C++ implementation focused on speed: double-double arithmetic instead of 128-bit floats gives the same top score in a fraction of the time, and LPC edge extension avoids pre-echo at the start and end of a file.
+The approach follows [ARDFTSRC](https://github.com/mrspoonsi/ARDFTSRC): rational resampling in the DFT domain. KBSRC is an independent C++ implementation focused on speed: double-double arithmetic instead of 128-bit floats costs a fraction of the time, and LPC edge extension avoids pre-echo at the start and end of a file. Its filter does not straddle the Nyquist frequency: the whole transition band lies below it.
 
 ## Building
 
@@ -28,17 +28,17 @@ kbsrc input.wav output.wav --rate 48000
 | `-f, --format F` | `f64` | `f64`, `f32`, `s32`, `s24` or `s16` |
 | `--dither` | off | TPDF dither for integer output |
 | `-t, --threads N` | 8 (exact), 4 (fast) | worker threads |
-| `--len S`, `--beta B` | 0.1, 40 | kernel half-length in seconds, Kaiser beta |
+| `--len S`, `--beta B` | 0.2, 40 | kernel half-length in seconds, Kaiser beta |
 | `--no-lpc` | | zero-pad the edges instead of extrapolating them |
 | `-v` | | print the plan and timings |
 
-Input can be 8/16/24/32-bit PCM or 32/64-bit float, with any number of channels. Any pair of integer sample rates works.
+Input can be 8/16/24/32-bit PCM or 32/64-bit float, with any number of channels. Any pair of integer sample rates works if the transition band fits below the lower Nyquist frequency with room for a passband: the band is 2·√(β² + π²) / (2π·S) Hz wide, 64 Hz at the defaults, so the lower rate must be at least 128 Hz; a longer `--len` allows lower rates. Converting 96 kHz to 44.1 kHz with the defaults, the response is flat to 21986 Hz and in the stopband from 22050 Hz.
 
 ## Comparison
 
 All runs were done on one machine (Ryzen 7 5800H, Windows 11). Time is the median of 5 runs after warm-up, converting a 180-second stereo 96 kHz noise file to 44.1 kHz, 64-bit float in and out, wall-clock including file I/O. The KBSRC rows were refreshed on 2026-10-13 at a fixed 3600 MHz using `bench/run.sh` and the portable GCC 16.1 build with the writer update. Competitor timings are from the earlier batch on the same date, machine and clock.
 
-Quality is the Hydrogenaudio balanced score, previously computed locally with the official scripts in GNU Octave 11.3. The current KBSRC build preserves the tested official output bytes in exact and fast modes; its listed scores are carried forward, not newly measured.
+Quality is the Hydrogenaudio balanced score, computed locally with the official scripts in GNU Octave 11.3. The KBSRC rows are for release 1.2.4, whose transition band straddled the output Nyquist frequency; the current code keeps it below (see [How it works](#how-it-works)) and has not been re-measured here yet.
 
 | Resampler | Version | Settings | Threads | Score | Time |
 |---|---|---|---|---|---|
@@ -56,7 +56,7 @@ Quality is the Hydrogenaudio balanced score, previously computed locally with th
 
 "Insane" is `--quality 262144 --bandwidth 0.995 --taper-type kaiser --beta 32 --alias-floor-db 0`, the settings behind dBpoweramp's ARDFTSRC Insane entry. ardftsrc-rs is the official Windows release. Everything else was built from source with GCC 16.1 at `-O3 -march=x86-64-v3`: soxr from tag `0.1.3` (945b592), SoX from tag `sox-14.4.2` (45b161d), and libsamplerate and speexdsp from their release tarballs. The libraries are called through `bench/srcbench.cpp`. Most of the gap in the lower rows comes from the aliasing, impulse, intermodulation and gapless tests.
 
-KBSRC achieves 99.93% on the Hydrogenaudio SRC comparison ([ranking](https://src.hydrogenaudio.org/), [result](https://src.hydrogenaudio.org/compareresults?id1=b7d5b47e-dd06-41cd-892a-b0b73d6e433d&id2=0)).
+The [Hydrogenaudio SRC comparison](https://src.hydrogenaudio.org/) ranks resamplers with the same test scripts.
 
 To reproduce, put the Hydrogenaudio test pack in `tests/data/`, then run `bench/build_tools.sh`, `bench/run.sh` and `bench/score.sh`. Results go to `bench/out/`.
 
@@ -76,7 +76,7 @@ AVX2 was faster in every paired trial. Outputs matched byte-for-byte in all four
 ## How it works
 
 - Each block is processed with overlap-save in the rational domain. Nb = nb·Q input bins map to Mb = nb·P output bins, where P/Q is the reduced rate ratio.
-- When downsampling, spectrum bins above the output Nyquist are folded back onto it, so the transition band is power-complementary. When upsampling, the input spectrum is extended periodically.
+- The cutoff sits half a transition band below the lower Nyquist frequency, so the response is in the stopband (below -300 dB with the default beta) from that frequency up. When downsampling, the spectrum bins above the output Nyquist are folded onto the output bins as decimation requires, but they hold only stopband residue. When upsampling, the input spectrum is extended periodically and the images lie in the stopband.
 - Rates that are very close together, like 44100 and 44101, put the transition band on the kernel's own Nyquist. In that case the kernel is sampled on a finer grid and every bin is folded modulo Mb.
 - The kernel taps (sinc and Kaiser window) are computed in double-double, with exact integer reduction of the sinc argument.
 - The signal edges are extended with Burg linear prediction (order 32), which avoids the pre-echo that zero padding causes. The Burg recursion also runs in double-double.
