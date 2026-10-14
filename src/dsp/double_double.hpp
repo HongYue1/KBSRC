@@ -5,18 +5,56 @@
 
 namespace kbsrc::KBSRC_ISA::dsp {
 
-// Exact error a*b - p of the rounded product p = fl(a*b). Hardware FMA when available, otherwise
-// Dekker's split (also exact while no partial product underflows, which audio-range values never do).
-static inline double prod_err(double a, double b, double p) {
+// Exact error a*b - p of the rounded product p = fl(a*b). Hardware FMA when available, otherwise Dekker's
+// split plus a scaled path for tiny products, which returns the same bits as the FMA in round-to-nearest (the
+// mode Exact always runs in, see dispatch.cpp) whenever the split cannot overflow (|a|, |b| up to about 2^995,
+// |p| up to about 2^1000; larger values behave as before). This is the only arithmetic that differs between
+// the engines, so it is what keeps the generic and AVX2 engines bit-identical.
+//   prod_err_fast  the same without the tiny-product path, for vectorised loops: equal to prod_err unless
+//                  prod_err_tiny(a, b, p), which is always false with FMA.
 #if defined(__FMA__) || defined(__ARM_FEATURE_FMA) || defined(__aarch64__)
-    return std::fma(a, b, -p);
+// __builtin_fma, not std::fma: unoptimised builds compile std::fma to a call into the C runtime, and MinGW-w64's
+// fma is not a correctly rounded fused multiply-add (it differs from the instruction on about one random product
+// in ten), which made the AVX2 engine's Exact output wrong in Debug builds. The builtin is always the
+// instruction; optimised code is unchanged.
+static inline double prod_err(double a, double b, double p) {
+    return __builtin_fma(a, b, -p);
+}
+static inline double prod_err_fast(double a, double b, double p) { return prod_err(a, b, p); }
+static inline bool prod_err_tiny(double, double, double) { return false; }
 #else
+// Dekker's split. Exact, hence equal to the FMA result, while no partial product underflows: guaranteed for
+// |p| >= 2^-968, since then e_a + e_b >= -970 and every partial product is a multiple of
+// ulp(a) * ulp(b) >= 2^-1074.
+static inline double prod_err_fast(double a, double b, double p) {
     const double S = 134217729.0;   // 2^27 + 1
     double t = S * a, ah = t - (t - a), al = a - ah;
     t = S * b; double bh = t - (t - b), bl = b - bh;
     return ((ah * bh - p) + ah * bl + al * bh) + al * bl;
-#endif
 }
+// The only inputs where the split can be inexact: a tiny product of nonzero factors (subnormal operands or
+// results, e.g. denormal samples). Zero factors give +0 on both paths; a NaN or infinite p fails the compare.
+// Bitwise & instead of && keeps loops that call this branch-free (vectorisable).
+static inline bool prod_err_tiny(double a, double b, double p) {
+    return (std::fabs(p) < 0x1p-968) & (a != 0) & (b != 0);
+}
+// Cold path for prod_err_tiny. Here |a|, |b| < 2^106 (the other factor is at least 2^-1074), so scaling both by
+// 2^589 is exact and cannot overflow, and it lifts e_a + e_b back to >= -970: the split of the scaled factors
+// is exact. P - ps is exact (Sterbenz); where p was rounded more coarsely than P (|a*b - p| <= 2^-1075) every
+// path gives a signed zero, and otherwise P == ps and the error is scaled back with a single final rounding.
+// Either way the result is fma(a, b, -p) bit for bit.
+[[gnu::noinline, gnu::cold]] static inline double prod_err_scaled(double a, double b, double p) {
+    const double up = 0x1p589, down = 0x1p-589;
+    double as = a * up, bs = b * up, ps = p * up * up, P = as * bs;
+    return ((P - ps) + prod_err_fast(as, bs, P)) * down * down;
+}
+static inline double prod_err(double a, double b, double p) {
+    if (std::fabs(p) < 0x1p-968) [[unlikely]] {
+        if (a != 0 && b != 0) return prod_err_scaled(a, b, p);
+    }
+    return prod_err_fast(a, b, p);
+}
+#endif
 
 struct dd {
     double hi, lo;

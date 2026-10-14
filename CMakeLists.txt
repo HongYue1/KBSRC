@@ -93,5 +93,14 @@ if(KBSRC_BUILD_TESTS)
     add_test(NAME formats COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/tests/test_formats.py --bin $<TARGET_FILE:kbsrc>)
     add_test(NAME reference COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/tests/test_reference.py
              --bin $<TARGET_FILE:kbsrc> --data ${KBSRC_TEST_DATA})
+    # Engine identity and rounding-mode independence of Exact; the driver calls the library with the caller in a
+    # chosen rounding mode, which the CLI cannot do.
+    add_executable(kbsrc_fenv_driver tests/fenv_driver.cpp)
+    target_link_libraries(kbsrc_fenv_driver PRIVATE kbsrc_lib kbsrc_options)
+    if(MINGW)
+      target_link_options(kbsrc_fenv_driver PRIVATE -static)
+    endif()
+    add_test(NAME engines COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/tests/test_engines.py
+             --bin $<TARGET_FILE:kbsrc> --driver $<TARGET_FILE:kbsrc_fenv_driver>)
   endif()
 endif()

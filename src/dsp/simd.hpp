@@ -1,6 +1,7 @@
 // 4-lane types: V4 (4 x double) and DD4 (4 x double-double).
 // AVX2+FMA intrinsics when the target has them, otherwise plain arrays (auto-vectorised: SSE2, NEON, ...).
-// Both backends perform the same IEEE operations in the same order, so results are bit-identical.
+// Both backends perform the same IEEE operations in the same order, and prod_err returns the FMA bits on both
+// (round-to-nearest, see double_double.hpp), so results are bit-identical.
 #pragma once
 #include "dsp/double_double.hpp"
 #include "isa.hpp"
@@ -85,11 +86,36 @@ static inline DD4 operator+(const DD4& a, const DD4& b) {
 }
 static inline DD4 operator-(const DD4& a) { DD4 r; KBSRC_L4(r.hi[i] = -a.hi[i]; r.lo[i] = -a.lo[i]) return r; }
 static inline DD4 operator-(const DD4& a, const DD4& b) { return a + (-b); }
-static inline DD4 operator*(const DD4& a, const DD4& b) {
+// Product of all four lanes with prod_err (tiny-product path included). Out of line: never needed with FMA,
+// and only for subnormal-range products without it.
+[[gnu::noinline, gnu::cold]] static inline DD4 dd4_mul_exact(const DD4& a, const DD4& b) {
     DD4 r;
     KBSRC_L4(double p = a.hi[i] * b.hi[i]; double e = prod_err(a.hi[i], b.hi[i], p);
              e = e + (a.hi[i] * b.lo[i] + a.lo[i] * b.hi[i]);
              double t = p + e; r.hi[i] = t; r.lo[i] = e - (t - p))
+    return r;
+}
+// Cheap screen: true when some lane's |hi * hi| is below the prod_err_tiny threshold or NaN. !(m >= T) is
+// also true for NaN, so a NaN lane cannot hide a tiny one in the pairwise minimum.
+static inline bool dd4_small(const DD4& a, const DD4& b) {
+    double m0 = std::fabs(a.hi[0] * b.hi[0]), m2 = std::fabs(a.hi[2] * b.hi[2]);
+    double m1 = std::fabs(a.hi[1] * b.hi[1]), m3 = std::fabs(a.hi[3] * b.hi[3]);
+    m0 = m2 < m0 ? m2 : m0; m1 = m3 < m1 ? m3 : m1;
+    return !(m0 >= 0x1p-968) | !(m1 >= 0x1p-968);
+}
+// Exact test behind the screen: does some lane need prod_err's tiny-product path?
+static inline bool dd4_tiny(const DD4& a, const DD4& b) {
+    int tiny = 0;
+    KBSRC_L4(tiny |= prod_err_tiny(a.hi[i], b.hi[i], a.hi[i] * b.hi[i]))
+    return tiny;
+}
+// The hot loop uses the branch-free prod_err_fast (vectorised); a product with a tiny lane is redone exactly.
+static inline DD4 operator*(const DD4& a, const DD4& b) {
+    DD4 r;
+    KBSRC_L4(double p = a.hi[i] * b.hi[i]; double e = prod_err_fast(a.hi[i], b.hi[i], p);
+             e = e + (a.hi[i] * b.lo[i] + a.lo[i] * b.hi[i]);
+             double t = p + e; r.hi[i] = t; r.lo[i] = e - (t - p))
+    if (dd4_small(a, b) && dd4_tiny(a, b)) [[unlikely]] r = dd4_mul_exact(a, b);
     return r;
 }
 #undef KBSRC_L4
