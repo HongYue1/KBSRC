@@ -135,9 +135,19 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
     int threads = opt.threads ? opt.threads : (int)std::min(std::max(1u, std::thread::hardware_concurrency()), opt.precision == Precision::Fast ? 4u : 8u);
     long long E = L + Q, pre = (E + 64 + Q - 1) / Q * Q, span = pre + nin + E + 64;
     auto fix = [&](int v) { while (v % 2 || !smooth7(v / 2)) v++; return v; };   // non-7-smooth P/Q -> Bluestein
-    int nb = fix(opt.block ? opt.block : (int)(10 * margl));
-    // Each block must leave a positive hop after its two margins. Automatic blocks always do (10 * marg, never
-    // shrunk below 4 * marg); an explicit block at or below 2 * marg used to crash the process.
+    // Automatic blocks span 10 margins, except in Fast, which is limited by memory traffic rather than arithmetic:
+    // on an x86-64 desktop it ran fastest with its larger transform, max(P, Q) * block, near 51200 points (0.8 MB
+    // of complex doubles), 4 to 10 margins per block, and no radix-7 passes from the block (up to 15 % slower).
+    const bool fast_auto = !opt.block && opt.precision == Precision::Fast;
+    auto round_block = [&](int v) {
+        while (v % 2 || !smooth7(v / 2) || (fast_auto && (v / 2) % 7 == 0)) v++;
+        return v;
+    };
+    int nb = opt.block ? fix(opt.block)
+                       : round_block((int)(fast_auto ? std::clamp(51200 / std::max(P, Q), 4 * margl, 10 * margl)
+                                                     : 10 * margl));
+    // Each block must leave a positive hop after its two margins. Automatic blocks always do (at least 4 * marg);
+    // an explicit block at or below 2 * marg used to crash the process.
     if (nb <= 2 * margl) throw std::invalid_argument("option out of range");
     const int marg = (int)margl;
     // Short inputs: shrink blocks so up to 8 threads get work. Block size affects rounding, so this
@@ -146,7 +156,7 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
     while (!opt.block && nb > 4 * marg) {
         long long nbk = (span + (long long)(nb - 2 * marg) * Q - 1) / ((long long)(nb - 2 * marg) * Q);
         if ((long long)ch * ((nbk + 3) / 4) >= 2 * shrink_threads) break;
-        int nn = fix(std::max(4 * marg, nb * 3 / 4)); if (nn >= nb) break; nb = nn;
+        int nn = round_block(std::max(4 * marg, nb * 3 / 4)); if (nn >= nb) break; nb = nn;
     }
     int Nb = nb * Q, Mb = nb * P, hop = nb - 2 * marg;
     long long nblk = (span + (long long)hop * Q - 1) / ((long long)hop * Q);

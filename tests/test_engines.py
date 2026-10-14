@@ -28,7 +28,7 @@ SUBNORMAL_WAV = "83d27bd8fb3438a12503cd1c0a9e78a1c980917ab4c808d226f14aca1b5a8f1
 CLI_PINS = [  # input, rate, --mode, sha256 of the output WAV, pinned only on x86-64 (x87 long double)
     ("primary", 96000, "exact", "355d557004d979d59358252264c63e689a136b51103c4390b2985a1c85f8398b", False),
     ("primary", 96000, "ld", "c55bae01612386ce25ad884afcc9f1223b19237d13debdeea508a0bc078edfdd", True),
-    ("primary", 96000, "fast", "5096742b492273bf1b7bd3db41e9554e0993d4144a3c9d6d92cf89e11d91f7a5", False),
+    ("primary", 96000, "fast", "5c71eba51cfc4958af6736b2c4657dd3cb6bf291f643b23e22f3abe799d5cb07", False),
     ("primary", 44100, "exact", "752c3fe855e795ecbba79e83aaf00cfe47fa09c9d4905d2e3e61235197dc1ccc", False),
     ("subnormal", 96000, "exact", "90ae0178d5ae1fea6505f0c03c130a6ddb3a880d2b74ad21dd25cf53dc5e7fea", False),
     ("subnormal", 44100, "exact", "0a03683c6809085e3d1d2e926d21aa3faec9aecc3db66590f501c68440b7bef2", False),
