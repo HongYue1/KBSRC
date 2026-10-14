@@ -34,7 +34,7 @@ double now() { return std::chrono::duration<double>(std::chrono::steady_clock::n
 // Returns the number of threads that ran.
 template <class T, class W, class C>
 int run_engine(const std::vector<std::vector<double>>& xx, std::vector<std::vector<double>>& out, long long P,
-               long long Q, bool up, int nb, int marg, int hop, int nblk, long long o, long long nout,
+               long long Q, bool up, int nb, int marg, int hop, long long nblk, long long o, long long nout,
                const std::vector<dd>& Hdd, int threads, int Jg) {
     const int Nb = nb * Q, Mb = nb * P, K = Mb / 2 + 1;
     RFFT<T, W, C> Fw, Iv; Fw.init(Nb); Iv.init(Mb);
@@ -95,9 +95,18 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
         throw std::invalid_argument("option out of range");
     const int fo = rate_out;
     long long fi = rate_in, g = std::gcd(fi, (long long)fo), P = fo / g, Q = fi / g; bool up = fo > fi;
-    long long nin = frames, nout = (nin * P + Q - 1) / Q; const int ch = channels;
-    std::vector<std::vector<double>> out(ch, std::vector<double>(nout));
-    if (fo == fi) { for (int c = 0; c < ch; c++) for (long long i = 0; i < nin; i++) out[c][i] = in[i * ch + c]; if (stats) { stats->p = P; stats->q = Q; } return out; }
+    // nout = ceil(nin * P / Q), computed without overflow. Lengths no buffer could hold are refused, which keeps
+    // every sample count and offset computed below far from the long long limit.
+    const long long nin = frames, cap = LLONG_MAX / 16; const int ch = channels;
+    const __int128 n128 = ((__int128)nin * P + Q - 1) / Q;
+    if (nin > cap || n128 > cap) throw std::invalid_argument("input too long");
+    const long long nout = (long long)n128;
+    if (fo == fi) {
+        std::vector<std::vector<double>> out(ch, std::vector<double>(nout));
+        for (int c = 0; c < ch; c++) for (long long i = 0; i < nin; i++) out[c][i] = in[i * ch + c];
+        if (stats) { stats->p = P; stats->q = Q; }
+        return out;
+    }
     const double t0 = now();
     long long fk = up ? fo : fi;                 // kernel sampling rate
     long long mn = std::min(fi, (long long)fo);  // lower rate: its Nyquist frequency mn/2 bounds the passband
@@ -142,7 +151,7 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
     int Nb = nb * Q, Mb = nb * P, hop = nb - 2 * marg;
     long long nblk = (span + (long long)hop * Q - 1) / ((long long)hop * Q);
     long long base = (long long)marg * Q, tot = base + nblk * hop * Q + Nb;
-    std::vector<std::vector<double>> xx(ch);
+    std::vector<std::vector<double>> out(ch, std::vector<double>(nout)), xx(ch);
     const int train = 4096;
     for (int c = 0; c < ch; c++) {
         xx[c].resize(tot);                       // value-initialised; pads must be zero anyway
@@ -180,9 +189,9 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
     threads = (int)std::max<long long>(1, std::min<long long>(threads, (long long)ch * ((nblk + 3) / 4)));
     long long o = pre / Q * P;
     switch (opt.precision) {
-        case Precision::Fast: threads = run_engine<double, double, V4>(xx, out, P, Q, up, nb, marg, hop, (int)nblk, o, nout, H, threads, Jg); break;
-        case Precision::LongDouble: threads = run_engine<LD, LD, LD>(xx, out, P, Q, up, nb, marg, hop, (int)nblk, o, nout, H, threads, Jg); break;
-        default: threads = run_engine<dd, dd, DD4>(xx, out, P, Q, up, nb, marg, hop, (int)nblk, o, nout, H, threads, Jg); break;
+        case Precision::Fast: threads = run_engine<double, double, V4>(xx, out, P, Q, up, nb, marg, hop, nblk, o, nout, H, threads, Jg); break;
+        case Precision::LongDouble: threads = run_engine<LD, LD, LD>(xx, out, P, Q, up, nb, marg, hop, nblk, o, nout, H, threads, Jg); break;
+        default: threads = run_engine<dd, dd, DD4>(xx, out, P, Q, up, nb, marg, hop, nblk, o, nout, H, threads, Jg); break;
     }
     if (stats) {
         stats->isa = simd_name;
