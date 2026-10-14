@@ -96,6 +96,7 @@ if(KBSRC_BUILD_TESTS)
              --bin $<TARGET_FILE:kbsrc>)
     add_test(NAME reference COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/tests/test_reference.py
              --bin $<TARGET_FILE:kbsrc> --data ${KBSRC_TEST_DATA})
+    set_tests_properties(reference PROPERTIES SKIP_RETURN_CODE 77)
     # Engine identity and rounding-mode independence of Exact; the driver calls the library with the caller in a
     # chosen rounding mode, which the CLI cannot do.
     add_executable(kbsrc_fenv_driver tests/fenv_driver.cpp)

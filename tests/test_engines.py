@@ -41,13 +41,13 @@ X86_64 = platform.machine().lower() in ("x86_64", "amd64", "x64")
 
 
 def primary97():
-    """97 stereo frames of dyadic values in [-1, 1] (validation input primary97)."""
+    """97 stereo frames of dyadic values in [-1, 1]."""
     rng = random.Random(0x4B42535243)
     return [rng.randint(-1048576, 1048576) / 1048576 for _ in range(194)]
 
 
 def subnormal97():
-    """97 stereo frames of subnormal doubles, |x| <= 2^-1024 (validation input subnormal97)."""
+    """97 stereo frames of subnormal doubles, |x| <= 2^-1024."""
     rng = random.Random(12345)
     return [math.ldexp(rng.randint(-1024, 1024) / 1024, -1024) for _ in range(194)]
 
@@ -57,7 +57,7 @@ def f64(samples):
 
 
 def wav_f64(samples, ch=2, rate=48000):
-    """64-bit float WAV laid out like the validation inputs (fmt with cbSize, fact chunk)."""
+    """64-bit float WAV with an 18-byte fmt chunk (cbSize = 0) and a fact chunk."""
     data = f64(samples)
     fmt = struct.pack("<HHIIHHH", 3, ch, rate, rate * 8 * ch, 8 * ch, 64, 0)
     body = (b"WAVE" + b"fmt " + struct.pack("<I", len(fmt)) + fmt + b"fact" + struct.pack("<II", 4, len(samples) // ch)
@@ -71,6 +71,14 @@ def sha(b):
 
 def hex64(b):
     return [b[i:i + 8][::-1].hex() for i in range(0, len(b), 8)]
+
+
+def read(path):
+    """The bytes of path, or b"" if it does not exist."""
+    if not os.path.exists(path):
+        return b""
+    with open(path, "rb") as f:
+        return f.read()
 
 
 class Checker:
@@ -117,7 +125,7 @@ def main():
         wavs = {}
         for name, want in (("primary", PRIMARY_WAV), ("subnormal", SUBNORMAL_WAV)):
             blob = wav_f64(inputs[name])
-            c.check(sha(blob) == want, f"fixture {name}97 reproduces the validation input")
+            c.check(sha(blob) == want, f"input {name}97 == {want[:16]}")
             wavs[name] = os.path.join(tmp, name + ".wav")
             with open(wavs[name], "wb") as f:
                 f.write(blob)
@@ -137,7 +145,7 @@ def main():
                 m = re.search(r"engine=(\w+)", r.stderr)
                 isa = m.group(1) if m else "?"
                 seen.add(isa)
-                got = sha(open(out, "rb").read()) if r.returncode == 0 and os.path.exists(out) else f"rc={r.returncode}"
+                got = sha(read(out)) if r.returncode == 0 and os.path.exists(out) else f"rc={r.returncode}"
                 c.check(got == want, f"cli {name} {rate} {mode} [{isa}] == {want[:16]}")
         cross = len(seen) > 1
         if not cross:
@@ -164,7 +172,7 @@ def main():
             r = subprocess.run([driver, mode, prec, str(rate_in), str(rate_out), "2", length, "40", str(threads),
                                 raw[name], pout], capture_output=True, text=True, env=env_for(engine))
             info = dict(kv.split("=", 1) for kv in r.stdout.split() if "=" in kv)
-            data = open(pout, "rb").read() if os.path.exists(pout) else b""
+            data = read(pout)
             return r.returncode, info, data
 
         # One stereo frame 8 kHz -> 16 kHz (its output used to depend on the mode): the same samples in every mode

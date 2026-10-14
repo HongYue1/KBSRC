@@ -1,6 +1,8 @@
 """Shared helpers for the kbsrc test scripts."""
 import argparse
+import atexit
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -20,6 +22,7 @@ def parse_args(need_data=False):
 
 
 TMP = tempfile.mkdtemp(prefix="kbsrc-test-")
+atexit.register(shutil.rmtree, TMP, ignore_errors=True)
 
 
 def tmp(name):

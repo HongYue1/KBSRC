@@ -54,7 +54,7 @@ ctest --test-dir build/portable --output-on-failure      # or: ctest --preset re
 - When the Python that CMake found has no NumPy/SciPy, run those suites directly, for example
   `uv run --no-project --with numpy,scipy python tests/test_rates.py --bin build/portable/kbsrc.exe`.
 - `reference` needs the 64-bit float WAVs of the Hydrogenaudio test pack in `tests/data/` (`KBSRC_TEST_DATA`
-  overrides the path) and reports a skip without them; read its output, a passing CTest row may be a skip.
+  overrides the path). If any is missing it compares the ones present and exits 77, which CTest reports as skipped.
   With GCC 16.1 on Windows four checks currently exceed their limits: gaplesstest_s exact (5.4e-15),
   sweep_1_to_44KHz fast and exact (5.7e-6) and aliasing150db exact (8.4e-15). Treat any other failure as a
   regression, and a change in these values as a change of output that needs an explanation.

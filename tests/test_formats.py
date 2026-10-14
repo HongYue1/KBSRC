@@ -44,12 +44,14 @@ for n in [1, 10]:
     kbsrc(args.bin, tmp("in.wav"), tmp("out.wav"), "--rate", 44100)
     c.check(wavio.read(tmp("out.wav"))[0].shape == (-(-n * 44100 // 48000), 1), f"{n}-sample input")
 hdr = b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, 48000, 96000, 2, 16) + b"data" + struct.pack("<I", 0)
-open(tmp("empty.wav"), "wb").write(b"RIFF" + struct.pack("<I", len(hdr)) + hdr)
+with open(tmp("empty.wav"), "wb") as f:
+    f.write(b"RIFF" + struct.pack("<I", len(hdr)) + hdr)
 kbsrc(args.bin, tmp("empty.wav"), tmp("out.wav"), "--rate", 44100)
 c.check(wavio.read(tmp("out.wav"))[0].shape == (0, 1), "empty input")
 
 # Errors: bad usage exits 2, bad files exit 1, never a crash
-open(tmp("trunc.wav"), "wb").write(open(tmp("ref.wav"), "rb").read()[:30])
+with open(tmp("ref.wav"), "rb") as f, open(tmp("trunc.wav"), "wb") as g:
+    g.write(f.read(30))
 for argv, code in [([tmp("ref.wav"), tmp("o.wav"), "--rate", "0"], 2),
                    ([tmp("ref.wav"), tmp("o.wav"), "--rate", "abc"], 2),
                    ([tmp("ref.wav"), tmp("o.wav"), "--mode", "nope"], 2),

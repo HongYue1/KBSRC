@@ -89,7 +89,7 @@ AVX2 was faster in every paired trial. Outputs matched byte-for-byte in all four
 ctest --preset release
 ```
 
-The tests need Python 3 with NumPy and SciPy. `test_reference` compares the output against the Python implementation in `reference/python`. It needs the 64-bit float WAVs from the Hydrogenaudio test pack in `tests/data/`, and it is skipped if they're missing.
+The tests need Python 3 with NumPy and SciPy. `test_reference` compares the output against the Python implementation in `reference/python`. It needs the 64-bit float WAVs from the Hydrogenaudio test pack in `tests/data/`, and CTest reports it as skipped if any is missing.
 
 ## Layout
 
