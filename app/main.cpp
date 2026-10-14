@@ -118,6 +118,7 @@ int run(const std::vector<std::string>& args) {
 
     const double t0 = now();
     kbsrc::io::Audio a = kbsrc::io::read_wav(in_path.c_str());
+    kbsrc::io::check_wav_output(a.ch, rate, format);   // fail before converting, not after
     const double t1 = now();
     kbsrc::Stats st;
     auto y = kbsrc::resample(a.d.data(), a.frames, a.ch, a.rate, rate, opt, &st);

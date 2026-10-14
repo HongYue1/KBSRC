@@ -15,8 +15,10 @@ struct Audio {
 };
 
 // format: "f64", "f32", "s32", "s24" or "s16". Integer formats round (optionally with TPDF dither) and clip.
-// Paths are UTF-8 on every platform. Both functions throw std::runtime_error on failure.
+// Paths are UTF-8 on every platform. The functions throw std::runtime_error on failure; check_wav_output fails
+// when a WAV header in that format cannot describe ch channels at that rate, as write_wav would.
 Audio read_wav(const char* path);
+void check_wav_output(int ch, int rate, const std::string& format);
 void write_wav(const char* path, const std::vector<std::vector<double>>& y, int ch, long long frames, int rate,
                const std::string& format, bool dither, long long& clipped);
 

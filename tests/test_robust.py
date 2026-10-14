@@ -3,9 +3,9 @@
 Covers block sizes (an explicit --block at or below twice the kernel margin crashed the process, and huge blocks
 overflowed the int transform sizes), kernel lengths (shorter than one kernel sample, or too short for the transition
 band to fit below the lower Nyquist frequency) and the WAV header checks (a PCM header with 0 bits per sample was
-accepted, and so was an IEEE float header whose sample size disagrees with the block alignment). A rejection must
-exit with status 1, print "kbsrc: <reason>" and write no output file. Stdlib only: it does not import common.py,
-which needs numpy.
+accepted, and so was an IEEE float header whose sample size disagrees with the block alignment; output headers
+must hold the frame size in 16 bits and the byte rate in 32). A rejection must exit with status 1, print
+"kbsrc: <reason>" and write no output file. Stdlib only: it does not import common.py, which needs numpy.
 
 Usage: test_robust.py --bin <kbsrc>
 """
@@ -25,6 +25,11 @@ TOO_LARGE = "block, rates or length too large"
 TOO_SHORT = "length too short for these sample rates"
 PCM_WIDTH = "unsupported PCM width"
 FLOAT_SIZE = "IEEE float sample size does not match the block alignment"
+NO_CHUNK = "missing fmt/data chunk"
+BAD_CHANNELS = "invalid WAV channel count"
+BAD_RATE = "invalid WAV sample rate"
+WIDE_FRAME = "too many channels for a WAV file in this format"
+FAST_BYTES = "sample rate too high for a WAV file with this many channels"
 
 
 class Checker:
@@ -53,6 +58,12 @@ def pcm(width, values):
     if width == 1:
         return bytes(v + 128 for v in values)
     return b"".join((v & (1 << 8 * width) - 1).to_bytes(width, "little") for v in values)
+
+
+def wav_header(path):
+    """(channels, sample rate, bytes per second, bytes per frame) from the fmt chunk kbsrc writes first."""
+    with open(path, "rb") as f:
+        return struct.unpack("<HIIH", f.read(34)[22:34])
 
 
 def wav_samples(path):
@@ -180,6 +191,27 @@ def main():
                 ("float 16 bits in 2 bytes", 3, 16, 2, "unsupported WAV format")):
             bad = write("bad", wav(tag, 1, 48000, bits, align, bytes(align * 4096)))
             rejected(f"WAV {name}", reason, bad, "--rate", 96000)
+        # Header fields that cannot describe audio, and a file without a fmt chunk.
+        f64 = struct.pack("<%dd" % len(x), *x)
+        for name, blob, reason in (
+                ("0 channels", wav(3, 0, 48000, 64, 16, f64), BAD_CHANNELS),
+                ("rate 0", wav(3, 2, 0, 64, 16, f64), BAD_RATE),
+                ("rate 2^31", wav(3, 2, 1 << 31, 64, 16, f64), BAD_RATE),
+                ("rate 2^32 - 1", wav(3, 2, (1 << 32) - 1, 64, 16, f64), BAD_RATE),
+                ("without fmt chunk", wav(3, 2, 48000, 64, 16, f64)[:12] + wav(3, 2, 48000, 64, 16, f64)[36:],
+                 NO_CHUNK)):
+            rejected(f"WAV {name}", reason, write("bad", blob), "--rate", 96000)
+        # Output headers hold the bytes per frame in 16 bits and the bytes per second in 32 bits: 8192 channels
+        # of f64 take 65536 bytes per frame, and of f32 at 192 kHz 6.3e9 bytes per second; s16 fits. The rate is
+        # unchanged, and the checks run before converting.
+        wide = write("wide", wav(1, 8192, 192000, 16, 2 * 8192, bytes(2 * 8192 * 4)))
+        rejected("8192 channels to f64", WIDE_FRAME, wide, "--rate", 192000, "--format", "f64")
+        rejected("8192 channels to f32 at 192 kHz", FAST_BYTES, wide, "--rate", 192000, "--format", "f32")
+        rc, err = run(wide, "--rate", 192000, "--format", "s16")
+        hdr = wav_header(out) if rc == 0 and os.path.exists(out) else None
+        ok = hdr == (8192, 192000, 192000 * 16384, 16384)
+        c.check(ok, "8192 channels to s16 at 192 kHz: converts, 16384 bytes per frame"
+                + ("" if ok else f" [rc={rc}, header {hdr}, {err.strip()[:200]!r}]"))
 
         ints = [rng.randint(-(1 << 31), (1 << 31) - 1) for _ in range(2 * 64)]
         for name, tag, bits, width in (("u8", 1, 8, 1), ("s16", 1, 16, 2), ("s24", 1, 24, 3), ("s32", 1, 32, 4),

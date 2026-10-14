@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cfenv>
+#include <climits>
 #include <cmath>
 #include <cstdlib>
 #if defined(__x86_64__) || defined(__i386__)
@@ -23,10 +24,15 @@ namespace {
 [[noreturn]] void fail(const char* m) { throw std::runtime_error(m); }
 
 #ifdef _WIN32
-FILE* uopen(const char* p, const char* m) {   // UTF-8 path -> wide
-    wchar_t wp[4096], wm[8]; MultiByteToWideChar(CP_UTF8, 0, p, -1, wp, 4096); MultiByteToWideChar(CP_UTF8, 0, m, -1, wm, 8);
-    return _wfopen(wp, wm);
+std::wstring wide(const char* s) {   // UTF-8 -> UTF-16, any length; empty if the conversion fails
+    int n = MultiByteToWideChar(CP_UTF8, 0, s, -1, nullptr, 0);
+    if (n <= 0) return std::wstring();
+    std::wstring w(n, L'\0');
+    if (MultiByteToWideChar(CP_UTF8, 0, s, -1, w.data(), n) != n) return std::wstring();
+    w.resize(n - 1);
+    return w;
 }
+FILE* uopen(const char* p, const char* m) { return _wfopen(wide(p).c_str(), wide(m).c_str()); }
 #define FSEEK _fseeki64
 #define FTELL _ftelli64
 #else
@@ -96,6 +102,8 @@ PackFn select_pack(bool use_sse, int rounding) {
     return &pack_scalar<B,D>;
 }
 
+int sample_bytes(const std::string& fmt) { return fmt == "f64" ? 8 : fmt == "s24" ? 3 : fmt == "s16" ? 2 : 4; }
+
 }  // namespace
 
 Audio read_wav(const char* path) {
@@ -104,12 +112,14 @@ Audio read_wav(const char* path) {
     uint8_t hd[12]; if (sz < 12 || fread(hd, 1, 12, f) != 12 || memcmp(hd, "RIFF", 4) || memcmp(hd + 8, "WAVE", 4)) fail("not a RIFF/WAVE file");
     auto u16 = [](const uint8_t* p) { return (unsigned)p[0] | (unsigned)p[1] << 8; };
     auto u32 = [&](const uint8_t* p) { return (uint32_t)u16(p) | (uint32_t)u16(p + 2) << 16; };
-    long long pos = 12, dpos = -1, dlen = 0; int tag = 0, ch = 0, rate = 0, bits = 0, align = 0;
+    long long pos = 12, dpos = -1, dlen = 0; int tag = 0, ch = 0, bits = 0, align = 0; uint32_t rate = 0;
+    bool fmt = false;
     while (pos + 8 <= sz) {
         uint8_t c[8]; FSEEK(f, pos, SEEK_SET); if (fread(c, 1, 8, f) != 8) break;
         uint32_t cl = u32(c + 4); long long body = pos + 8;
         if (!memcmp(c, "fmt ", 4)) {
             uint8_t fm[40] = {}; size_t n = fread(fm, 1, std::min<uint32_t>(cl, 40), f); if (n < 16) fail("bad fmt chunk");
+            fmt = true;
             tag = u16(fm); ch = u16(fm + 2); rate = u32(fm + 4); align = u16(fm + 12); bits = u16(fm + 14);
             if (tag == 0xFFFE && n >= 26) tag = u16(fm + 24);
         } else if (!memcmp(c, "data", 4)) {
@@ -119,7 +129,9 @@ Audio read_wav(const char* path) {
         }
         pos = body + cl + (cl & 1);
     }
-    if (dpos < 0 || !ch || !rate) fail("missing fmt/data chunk");
+    if (!fmt || dpos < 0) fail("missing fmt/data chunk");
+    if (!ch) fail("invalid WAV channel count");
+    if (!rate || rate > INT_MAX) fail("invalid WAV sample rate");
     if (align <= 0 || align % ch) fail("invalid WAV block alignment");
     if (!(tag == 1 || (tag == 3 && (bits == 32 || bits == 64)))) fail("unsupported WAV format (need PCM or IEEE float)");
     // The sample size must match the block alignment. PCM samples take the fewest whole bytes that hold them
@@ -129,7 +141,7 @@ Audio read_wav(const char* path) {
     int bps = align / ch;
     if (tag == 1 && (bps < 1 || bps > 4 || (bits + 7) / 8 != bps)) fail("unsupported PCM width");
     if (tag == 3 && bits != 8 * bps) fail("IEEE float sample size does not match the block alignment");
-    Audio a; a.rate = rate; a.ch = ch; a.fmt_bits = bits; a.fmt_float = tag == 3;
+    Audio a; a.rate = (int)rate; a.ch = ch; a.fmt_bits = bits; a.fmt_float = tag == 3;
     a.frames = dlen / align; size_t n = (size_t)a.frames * ch; a.d.resize(n);
     FSEEK(f, dpos, SEEK_SET);
     const size_t CS = (size_t)1 << 20; std::vector<uint8_t> buf(CS * bps);
@@ -146,11 +158,20 @@ Audio read_wav(const char* path) {
     return a;
 }
 
+void check_wav_output(int ch, int rate, const std::string& fmt) {
+    // The header holds the bytes per frame in 16 bits and the bytes per second in 32 bits.
+    const long long frame = (long long)ch * sample_bytes(fmt);
+    if (ch < 1 || frame > 0xFFFF) fail("too many channels for a WAV file in this format");
+    if (rate < 1 || rate * frame > 0xFFFFFFFFLL) fail("sample rate too high for a WAV file with this many channels");
+}
+
 void write_wav(const char* path, const std::vector<std::vector<double>>& y, int ch, long long frames, int rate, const std::string& fmt, bool dither, long long& clipped) {
+    check_wav_output(ch, rate, fmt);
     bool fl = fmt == "f64" || fmt == "f32"; int bits = fmt == "f64" ? 64 : fmt == "f32" ? 32 : fmt == "s32" ? 32 : fmt == "s24" ? 24 : 16;
     int kind = fmt == "f64" ? 0 : fmt == "f32" ? 1 : 2;
-    int bps = bits / 8; size_t n = (size_t)frames * ch, dl = n * bps;
-    if (dl + 80 > 0xFFFFFFFFull) fail("output too large for WAV (4 GB limit)");
+    const int bps = bits / 8, align = ch * bps;
+    if (frames < 0 || frames > (0xFFFFFFFFLL - 80) / align) fail("output too large for WAV (4 GB limit)");
+    const size_t dl = (size_t)frames * align;
     std::vector<uint8_t> out; out.reserve(96);
     auto p16 = [&](unsigned v) { out.push_back(v & 255); out.push_back(v >> 8 & 255); };
     auto p32 = [&](uint32_t v) { p16(v & 0xFFFF); p16(v >> 16); };
@@ -159,7 +180,7 @@ void write_wav(const char* path, const std::vector<std::vector<double>>& y, int 
     unsigned fmtlen = ext ? 40 : (fl ? 18 : 16);
     uint32_t riff = 4 + 8 + fmtlen + (fl ? 12 : 0) + 8 + dl + (dl & 1);
     tag4("RIFF"); p32(riff); tag4("WAVE"); tag4("fmt "); p32(fmtlen);
-    p16(ext ? 0xFFFE : fl ? 3 : 1); p16(ch); p32(rate); p32(rate * ch * bps); p16(ch * bps); p16(bits);
+    p16(ext ? 0xFFFE : fl ? 3 : 1); p16(ch); p32(rate); p32((uint32_t)rate * align); p16(align); p16(bits);
     if (fmtlen >= 18) p16(ext ? 22 : 0);
     if (ext) {
         p16(bits); p32(ch == 1 ? 4 : ch == 2 ? 3 : 0);
@@ -194,12 +215,15 @@ void write_wav(const char* path, const std::vector<std::vector<double>>& y, int 
     else if (bps == 3) pack = dither ? select_pack<3,true>(use_sse,rounding) : select_pack<3,false>(use_sse,rounding);
     else pack = dither ? select_pack<4,true>(use_sse,rounding) : select_pack<4,false>(use_sse,rounding);
     clipped = 0;
-    const long long CF = 1 << 16; std::vector<uint8_t> buf((size_t)CF * ch * bps);
+    // 65536 frames per write, fewer for wide frames so the buffer stays within 4 MB. The frames are packed in
+    // order whatever the chunk size, so the dither sequence does not depend on it.
+    const long long CF = std::max(1, std::min(1 << 16, (4 << 20) / align));
+    std::vector<uint8_t> buf((size_t)CF * align);
     for (long long f0 = 0; f0 < frames; f0 += CF) {
         long long nf = std::min(CF, frames - f0); uint8_t* p = buf.data();
         if (kind == 2) {
             pack(buf.data(), y, ch, f0, f0+nf, rng, U, clipped);
-            p += (size_t)nf * ch * bps;
+            p += (size_t)nf * align;
         } else {
             for (long long i = f0; i < f0+nf; ++i) for (int c = 0; c < ch; ++c, p += bps) {
                 double x = y[c][i];
