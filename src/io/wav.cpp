@@ -119,7 +119,13 @@ Audio read_wav(const char* path) {
     if (dpos < 0 || !ch || !rate) fail("missing fmt/data chunk");
     if (align <= 0 || align % ch) fail("invalid WAV block alignment");
     if (!(tag == 1 || (tag == 3 && (bits == 32 || bits == 64)))) fail("unsupported WAV format (need PCM or IEEE float)");
-    int bps = align / ch; if (tag == 1 && (bps < 1 || bps > 4)) fail("unsupported PCM width");
+    // The sample size must match the block alignment. PCM samples take the fewest whole bytes that hold them
+    // (12-bit audio in 16-bit containers is valid: left-justified, it decodes as 16-bit); a PCM header with 0 bits
+    // used to be accepted. Float samples take exactly 4 or 8 bytes: a 64-bit float header with 4-byte blocks
+    // made the reader copy 8 bytes per sample out of a buffer filled with 4.
+    int bps = align / ch;
+    if (tag == 1 && (bps < 1 || bps > 4 || (bits + 7) / 8 != bps)) fail("unsupported PCM width");
+    if (tag == 3 && bits != 8 * bps) fail("IEEE float sample size does not match the block alignment");
     Audio a; a.rate = rate; a.ch = ch; a.fmt_bits = bits; a.fmt_float = tag == 3;
     a.frames = dlen / align; size_t n = (size_t)a.frames * ch; a.d.resize(n);
     FSEEK(f, dpos, SEEK_SET);

@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <climits>
 #include <cmath>
 #include <numeric>
 #include <stdexcept>
@@ -101,14 +102,26 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
     long long mn = std::min(fi, (long long)fo), gg = std::gcd(mn, fk);
     // Near-unity ratios need a finer-grid kernel below. Compute the original reach
     // without designing taps that would never be used in that path.
-    long long Lk = (int)std::floor(opt.length * (double)fk);
+    // Lk = one-sided kernel length in kernel samples. A length shorter than one kernel sample would collapse the
+    // kernel (L = 0) and return nonfinite output as success; it is rejected, as is one too long for an int.
+    const double lk = std::floor(opt.length * (double)fk);
+    if (!(lk >= 1 && lk <= INT_MAX)) throw std::invalid_argument("option out of range");
+    long long Lk = (long long)lk;
     long long L = (Lk * fi + fk - 1) / fk + 1;   // reach in input samples
-    int marg = (int)std::max((L + Q + Q - 1) / Q, up ? (Lk + P + P - 1) / P : 0LL);
+    long long margl = std::max((L + Q + Q - 1) / Q, up ? (Lk + P + P - 1) / P : 0LL);
+    // Transform sizes block * Q and block * P are ints, and the finer kernel grid needs 5/4 of the larger one:
+    // refuse what would overflow them (huge explicit blocks, extreme rates or lengths) instead of misbehaving.
+    if ((opt.block ? opt.block : 10 * margl) > INT_MAX / 2 / std::max(P, Q))
+        throw std::invalid_argument("block, rates or length too large");
     // default thread cap: the pipeline is memory-bandwidth bound beyond a few cores
     int threads = opt.threads ? opt.threads : (int)std::min(std::max(1u, std::thread::hardware_concurrency()), opt.precision == Precision::Fast ? 4u : 8u);
     long long E = L + Q, pre = (E + 64 + Q - 1) / Q * Q, span = pre + nin + E + 64;
     auto fix = [&](int v) { while (v % 2 || !smooth7(v / 2)) v++; return v; };   // non-7-smooth P/Q -> Bluestein
-    int nb = fix(opt.block ? opt.block : 10 * marg);
+    int nb = fix(opt.block ? opt.block : (int)(10 * margl));
+    // Each block must leave a positive hop after its two margins. Automatic blocks always do (10 * marg, never
+    // shrunk below 4 * marg); an explicit block at or below 2 * marg used to crash the process.
+    if (nb <= 2 * margl) throw std::invalid_argument("option out of range");
+    const int marg = (int)margl;
     // Short inputs: shrink blocks so up to 8 threads get work. Block size affects rounding, so this
     // heuristic is part of the output definition: it must not depend on the machine or on --threads.
     const long long shrink_threads = 8;
