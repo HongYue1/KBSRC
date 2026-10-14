@@ -58,7 +58,7 @@ if(KBSRC_ARCH STREQUAL "portable" AND KBSRC_X86)
   list(APPEND KBSRC_ENGINE_OBJECTS $<TARGET_OBJECTS:kbsrc_engine_avx2>)
 endif()
 
-add_library(kbsrc_lib STATIC src/dispatch.cpp ${KBSRC_ENGINE_OBJECTS})
+add_library(kbsrc_lib STATIC src/dispatch.cpp src/parallel.cpp ${KBSRC_ENGINE_OBJECTS})
 add_library(kbsrc::kbsrc ALIAS kbsrc_lib)
 set_target_properties(kbsrc_lib PROPERTIES OUTPUT_NAME kbsrc)
 target_include_directories(kbsrc_lib

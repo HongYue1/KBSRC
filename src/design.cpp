@@ -6,6 +6,7 @@
 #include <thread>
 
 #include "dsp/fft.hpp"
+#include "parallel.hpp"
 
 namespace kbsrc::KBSRC_ISA::detail {
 
@@ -28,9 +29,10 @@ std::vector<dd> kernel_taps(int L, long long a, long long b, double beta) {
     // taps are independent: split them over threads (the result does not depend on the split)
     int nt = (int)std::min<long long>(std::max(1u, std::thread::hardware_concurrency()), std::max(1, (L + 1) / 512));
     std::atomic<int> next(0);
-    auto work = [&]() { for (int c; (c = next.fetch_add(256)) <= L;) for (int n = c; n <= std::min(L, c + 255); n++) tap(n); };
-    std::vector<std::thread> th; for (int i = 1; i < nt; i++) th.emplace_back(work);
-    work(); for (auto& t : th) t.join();
+    auto work = [&](const std::atomic<bool>& stop) {
+        for (int c; !stop && (c = next.fetch_add(256)) <= L;) for (int n = c; n <= std::min(L, c + 255); n++) tap(n);
+    };
+    parallel::run(nt, work);
     return h;
 }
 std::vector<dd> kernel(long long fk, long long a, long long b, double T, double beta) { return kernel_taps((int)std::floor(T * (double)fk), a, b, beta); }

@@ -13,6 +13,7 @@
 #include "design.hpp"
 #include "dsp/fft.hpp"
 #include "lpc.hpp"
+#include "parallel.hpp"
 
 // One copy of this file is compiled per instruction set (see isa.hpp); src/dispatch.cpp picks one at run time.
 namespace kbsrc::KBSRC_ISA {
@@ -30,21 +31,22 @@ using LD = long double;
 double now() { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 
 // Overlap-save block engine. T: arithmetic type, W: coefficient type, C: SIMD type used inside the FFT.
+// Returns the number of threads that ran.
 template <class T, class W, class C>
-void run_engine(const std::vector<std::vector<double>>& xx, std::vector<std::vector<double>>& out, long long P,
-                long long Q, bool up, int nb, int marg, int hop, int nblk, long long o, long long nout,
-                const std::vector<dd>& Hdd, int threads, int Jg) {
+int run_engine(const std::vector<std::vector<double>>& xx, std::vector<std::vector<double>>& out, long long P,
+               long long Q, bool up, int nb, int marg, int hop, int nblk, long long o, long long nout,
+               const std::vector<dd>& Hdd, int threads, int Jg) {
     const int Nb = nb * Q, Mb = nb * P, K = Mb / 2 + 1;
     RFFT<T, W, C> Fw, Iv; Fw.init(Nb); Iv.init(Mb);
     std::vector<W> H(Hdd.size()); for (size_t k = 0; k < Hdd.size(); k++) H[k] = from_dd<W>(Hdd[k]);
     const int ch = (int)xx.size(); const long long ntask = (long long)ch * nblk;
     std::atomic<long long> next(0);
-    auto work = [&]() {
+    auto work = [&](const std::atomic<bool>& stop) {
         const int mx = std::max(Nb, Mb);
         std::vector<T> r(Mb); std::vector<cx<T>> X(Nb / 2 + 1), Y(K), z(mx / 2), y(mx / 2);
         std::vector<Scratch32> sc(std::max(Fw.scratch_bytes(), Iv.scratch_bytes()) / 32 + 2);
         for (;;) {
-            long long t = next++; if (t >= ntask) break;
+            long long t = next++; if (t >= ntask || stop) break;
             int c = (int)(t / nblk); long long b = t % nblk;
             const double* s = xx[c].data() + b * hop * Q;
             // Pack f64 input directly into the complex FFT buffer; no expanded staging pass.
@@ -80,8 +82,7 @@ void run_engine(const std::vector<std::vector<double>>& xx, std::vector<std::vec
             }
         }
     };
-    std::vector<std::thread> th; for (int i = 1; i < threads; i++) th.emplace_back(work);
-    work(); for (auto& t : th) t.join();
+    return parallel::run(threads, work);
 }
 
 }  // namespace
@@ -179,9 +180,9 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
     threads = (int)std::max<long long>(1, std::min<long long>(threads, (long long)ch * ((nblk + 3) / 4)));
     long long o = pre / Q * P;
     switch (opt.precision) {
-        case Precision::Fast: run_engine<double, double, V4>(xx, out, P, Q, up, nb, marg, hop, (int)nblk, o, nout, H, threads, Jg); break;
-        case Precision::LongDouble: run_engine<LD, LD, LD>(xx, out, P, Q, up, nb, marg, hop, (int)nblk, o, nout, H, threads, Jg); break;
-        default: run_engine<dd, dd, DD4>(xx, out, P, Q, up, nb, marg, hop, (int)nblk, o, nout, H, threads, Jg); break;
+        case Precision::Fast: threads = run_engine<double, double, V4>(xx, out, P, Q, up, nb, marg, hop, (int)nblk, o, nout, H, threads, Jg); break;
+        case Precision::LongDouble: threads = run_engine<LD, LD, LD>(xx, out, P, Q, up, nb, marg, hop, (int)nblk, o, nout, H, threads, Jg); break;
+        default: threads = run_engine<dd, dd, DD4>(xx, out, P, Q, up, nb, marg, hop, (int)nblk, o, nout, H, threads, Jg); break;
     }
     if (stats) {
         stats->isa = simd_name;
