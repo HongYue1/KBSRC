@@ -103,5 +103,11 @@ if(KBSRC_BUILD_TESTS)
     endif()
     add_test(NAME engines COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/tests/test_engines.py
              --bin $<TARGET_FILE:kbsrc> --driver $<TARGET_FILE:kbsrc_fenv_driver>)
+    # A portable x86-64 build must run on CPUs without AVX: no AVX instruction outside the AVX2 engine.
+    if(TARGET kbsrc_engine_avx2)
+      add_test(NAME isa COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/tests/test_isa.py
+               --bin $<TARGET_FILE:kbsrc> --objdump "${CMAKE_OBJDUMP}")
+      set_tests_properties(isa PROPERTIES SKIP_RETURN_CODE 77)
+    endif()
   endif()
 endif()

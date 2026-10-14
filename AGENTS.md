@@ -46,9 +46,10 @@ ctest --test-dir build/portable --output-on-failure      # or: ctest --preset re
 | `formats` | NumPy | WAV formats, edge cases, command-line errors |
 | `rates` | NumPy | sine accuracy over common, odd and near-unity ratios |
 | `reference` | NumPy, SciPy, `tests/data/` | agreement with `reference/python` on the Hydrogenaudio test WAVs |
+| `isa` | Python 3 standard library, objdump | portable x86-64 only: no AVX instruction outside the AVX2 engine |
 
-- `test_robust.py` and `test_engines.py` must stay standard-library only, so they run on any machine. They do
-  not import `tests/common.py`, which needs NumPy.
+- `test_robust.py`, `test_engines.py` and `test_isa.py` must stay standard-library only, so they run on any
+  machine. They do not import `tests/common.py`, which needs NumPy.
 - When the Python that CMake found has no NumPy/SciPy, run those suites directly, for example
   `uv run --no-project --with numpy,scipy python tests/test_rates.py --bin build/portable/kbsrc.exe`.
 - `reference` needs the 64-bit float WAVs of the Hydrogenaudio test pack in `tests/data/` (`KBSRC_TEST_DATA`
@@ -73,6 +74,10 @@ The output is defined to the bit. These rules protect that:
 - The generic engine must stay baseline x86-64 in portable builds: no `-march`, target attributes or
   intrinsics beyond SSE2 in code compiled into it. Instruction-set-specific code belongs in the per-ISA
   engine copies (`src/isa.hpp`, `kbsrc_engine()` in CMakeLists.txt) or behind a run-time CPU check.
+- A portable build must start on any x86-64 CPU. Objects at namespace scope in engine code must be
+  constant-initialised (`constexpr`): a dynamic initialiser in the AVX2 copy is AVX code that runs before
+  `main` on every CPU. The `isa` test disassembles the executable and fails for any AVX instruction outside the
+  AVX2 engine, including start-up code and target-attribute functions such as the SSE4.1 WAV writer.
 - Output must be bit-identical across engines, thread counts, compilers and platforms, and for Exact also
   across the caller's rounding modes (`resample()` switches to round-to-nearest and restores the caller's
   mode). Block size affects rounding, so block planning may depend only on the input and the options, never

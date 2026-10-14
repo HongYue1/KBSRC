@@ -67,7 +67,10 @@ void pack_sse(uint8_t* p, const std::vector<std::vector<double>>& y, int ch, lon
     for (long long i = first; i < last; ++i) for (int c = 0; c < ch; ++c, p += B) {
         double v = y[c][i] * sc;
         if constexpr (D) v += U(rng) + U(rng);
-        v = _mm_cvtsd_f64(_mm_round_sd(_mm_setzero_pd(), _mm_set_sd(v), R | _MM_FROUND_NO_EXC));
+        // Source and merge operand are the same register: with a zero vector as the merge operand, GCC 14 and
+        // 16 emit the AVX encoding (vroundsd) even in this SSE4.1 function, which faults on CPUs without AVX.
+        const __m128d x = _mm_set_sd(v);
+        v = _mm_cvtsd_f64(_mm_round_sd(x, x, R | _MM_FROUND_NO_EXC));
         if (v > sc-1) { v = sc-1; ++clipped; } else if (v < -sc) { v = -sc; ++clipped; }
         // The release serializes NaN as zero; avoid its undefined cast.
         int64_t iv = std::isnan(v) ? 0 : (int64_t)v;

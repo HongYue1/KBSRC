@@ -58,9 +58,9 @@ static inline double prod_err(double a, double b, double p) {
 
 struct dd {
     double hi, lo;
-    dd() : hi(0), lo(0) {}
-    dd(double h) : hi(h), lo(0) {}
-    dd(double h, double l) : hi(h), lo(l) {}
+    constexpr dd() : hi(0), lo(0) {}
+    constexpr dd(double h) : hi(h), lo(0) {}
+    constexpr dd(double h, double l) : hi(h), lo(l) {}
 };
 static inline dd qts(double a, double b) { double s = a + b; return dd(s, b - (s - a)); }
 static inline dd ts(double a, double b) { double s = a + b, bb = s - a; return dd(s, (a - (s - bb)) + (b - bb)); }
@@ -105,7 +105,9 @@ static inline dd dd_i0(const dd& x) {
     }
     return s;
 }
-static const dd DD_PI(3.141592653589793116e+00, 1.224646799147353207e-16);
+// constexpr, so it is initialised at compile time: a dynamic initialiser in the AVX2 engine copy would be AVX
+// code that runs at start-up on every CPU.
+inline constexpr dd DD_PI(3.141592653589793116e+00, 1.224646799147353207e-16);
 
 // cos/sin of 2*pi*k/N, exact integer argument reduction, Taylor in dd on [0, pi/4]
 static inline void dd_sincos_small(const dd& x, dd& c, dd& s) {
