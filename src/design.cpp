@@ -35,7 +35,6 @@ std::vector<dd> kernel_taps(int L, long long a, long long b, double beta) {
     parallel::run(nt, work);
     return h;
 }
-std::vector<dd> kernel(long long fk, long long a, long long b, double T, double beta) { return kernel_taps((int)std::floor(T * (double)fk), a, b, beta); }
 
 // spectrum of the circularly placed symmetric kernel, length Nlen, times 1/scale_den (dd)
 std::vector<dd> kernel_spectrum(const std::vector<dd>& h, int Nlen, double scale_den) {

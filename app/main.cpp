@@ -6,6 +6,7 @@
 #include <new>
 #include <stdexcept>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "io/wav.hpp"

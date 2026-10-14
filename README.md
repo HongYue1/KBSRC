@@ -13,7 +13,7 @@ cmake --preset release
 cmake --build --preset release
 ```
 
-The binary is written to `build/release/kbsrc`. The `release` preset tunes for the build machine. Use `portable` for a binary that runs on any CPU of the same architecture: on x86-64 it contains an AVX2 engine and a generic one and picks at run time. Set `KBSRC_CPU=generic` to force the generic engine. Output is bit-identical across engines, thread counts, compilers and platforms (checked with MinGW GCC on Windows, GCC and Clang on Linux, and ARM64), because every step uses only IEEE basic operations. On Windows, [w64devkit](https://github.com/skeeto/w64devkit) works out of the box and produces a static `kbsrc.exe`.
+The binary is written to `build/release/kbsrc`. The `release` preset tunes for the build machine. Use `portable` for a binary that runs on any CPU of the same architecture: on x86-64 it contains an AVX2 engine and a generic one and picks at run time. Set `KBSRC_CPU=generic` to force the generic engine. Output is bit-identical across engines, thread counts, compilers and platforms (checked with MinGW GCC on Windows, GCC and Clang on Linux, and ARM64), because every step uses only IEEE basic operations. The exception is `ld`, which uses the x87 80-bit format and so matches only on x86-64. On Windows, [w64devkit](https://github.com/skeeto/w64devkit) works out of the box and produces a static `kbsrc.exe`.
 
 ## Usage
 
@@ -30,9 +30,10 @@ kbsrc input.wav output.wav --rate 48000
 | `-t, --threads N` | up to 8 (4 for `fast`) | worker threads |
 | `--len S`, `--beta B` | 0.2, 40 | kernel half-length in seconds, Kaiser beta |
 | `--no-lpc` | | zero-pad the edges instead of extrapolating them |
+| `--block N` | automatic | block size nb (see [How it works](#how-it-works)); it changes the rounding of the output |
 | `-v` | | print the plan and timings |
 
-Input can be 8/16/24/32-bit PCM or 32/64-bit float, with any number of channels. Any pair of integer sample rates works if the transition band fits below the lower Nyquist frequency with room for a passband: the band is 2·√(β² + π²) / (2π·S) Hz wide, 64 Hz at the defaults, so the lower rate must be at least 128 Hz; a longer `--len` allows lower rates. Converting 96 kHz to 44.1 kHz with the defaults, the response is flat to 21986 Hz and in the stopband from 22050 Hz.
+Input can be 8/16/24/32-bit PCM or 32/64-bit float, with any number of channels. Any pair of integer sample rates from 1 Hz to 10 MHz works if the transition band fits below the lower Nyquist frequency with room for a passband: the band is 2·√(β² + π²) / (2π·S) Hz wide, 64 Hz at the defaults, so the lower rate must be at least 128 Hz; a longer `--len` allows lower rates. Converting 96 kHz to 44.1 kHz with the defaults, the response is flat to 21986 Hz and in the stopband from 22050 Hz.
 
 ## Comparison
 
@@ -75,7 +76,7 @@ AVX2 was faster in every paired trial. Outputs matched byte-for-byte in all four
 
 ## How it works
 
-- Each block is processed with overlap-save in the rational domain. Nb = nb·Q input bins map to Mb = nb·P output bins, where P/Q is the reduced rate ratio.
+- Each block is processed with overlap-save in the rational domain. Nb = nb·Q input bins map to Mb = nb·P output bins, where P/Q is the reduced rate ratio. By default a block spans ten kernel margins in `exact` and `ld`. `fast` is limited by memory traffic, so it aims for transforms of about 51200 points, with four to ten margins per block. nb is rounded up to an even number whose half is 7-smooth (5-smooth for automatic `fast` blocks).
 - The cutoff sits half a transition band below the lower Nyquist frequency, so the response is in the stopband (below -300 dB with the default beta) from that frequency up. When downsampling, the spectrum bins above the output Nyquist are folded onto the output bins as decimation requires, but they hold only stopband residue. When upsampling, the input spectrum is extended periodically and the images lie in the stopband.
 - Rates that are very close together, like 44100 and 44101, put the transition band on the kernel's own Nyquist. In that case the kernel is sampled on a finer grid and every bin is folded modulo Mb.
 - The kernel taps (sinc and Kaiser window) are computed in double-double, with exact integer reduction of the sinc argument.

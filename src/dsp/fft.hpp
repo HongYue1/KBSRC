@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <memory>
 #include <cstdint>
+#include <utility>
 #include "dsp/double_double.hpp"
 #include "dsp/simd.hpp"
 
@@ -56,6 +57,7 @@ static inline bool smooth7(long long n) {
     for (int p : {2, 3, 5, 7}) while (n % p == 0) n /= p;
     return n == 1;
 }
+static inline long long next_smooth7(long long n) { while (!smooth7(n)) n++; return n; }
 
 template <class T, class W, int R> static inline void odd_bfly(const cx<T>* src, size_t sm, cx<T>* dst, int s, int q, const W* cr, const W* sr, const cx<W>* tw, bool p0) {
     constexpr int H = (R - 1) / 2;
@@ -193,7 +195,6 @@ template <class S, class T> static inline cx<T> lane_pack(const cx<S>* const* p)
 // Four-step (Bailey) FFT: n = N1*N2. Column FFTs (length N1) then twiddle, row FFTs (length N2) written
 // transposed into natural order. Sub-FFTs run in SIMD type T on 4 columns / rows at once (L1/L2 resident),
 // data is stored in scalar type S -> 2 streaming passes over memory, 4x less traffic than block lanes.
-static inline long long next_smooth7(long long n) { while (!smooth7(n)) n++; return n; }
 template <class S, class W = S, class T = S> struct CFFT {
     using LN = Lane<S, T>; static constexpr int NL = LN::N;
     int n = 0, N1 = 0, N2 = 0; bool four = false;

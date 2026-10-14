@@ -1,10 +1,10 @@
 """Rejected options and malformed WAV headers must fail cleanly; valid neighbours must still convert.
 
-Covers block sizes (an explicit --block at or below twice the kernel margin crashed the process, and huge blocks
-overflowed the int transform sizes), kernel lengths (shorter than one kernel sample, or too short for the transition
-band to fit below the lower Nyquist frequency) and the WAV header checks (a PCM header with 0 bits per sample was
-accepted, and so was an IEEE float header whose sample size disagrees with the block alignment; output headers
-must hold the frame size in 16 bits and the byte rate in 32). A rejection must exit with status 1, print
+Covers block sizes (an explicit --block must leave a hop after twice the kernel margin, and huge blocks would
+overflow the int transform sizes), kernel lengths (shorter than one kernel sample, or too short for the transition
+band to fit below the lower Nyquist frequency), input rates and the WAV header checks (a PCM header with 0 bits per
+sample, an IEEE float header whose sample size disagrees with the block alignment, zero channels or rates beyond
+an int; output headers must hold the frame size in 16 bits and the byte rate in 32). A rejection must exit with status 1, print
 "kbsrc: <reason>" and write no output file. Stdlib only: it does not import common.py, which needs numpy.
 
 Usage: test_robust.py --bin <kbsrc>
@@ -144,7 +144,7 @@ def main():
         converts("automatic block", src, "--rate", 96000)
         converts("--block 20000", src, "--rate", 96000, "--len", "0.1", "--block", 20000, plan=["block=20000"])
         # Transform sizes are block * P and block * Q (here P/Q = 2/1) and must stay well inside int: such blocks
-        # used to run for minutes, fail to allocate or overflow.
+        # are refused before any work.
         for block in (536870912, 2147483647):
             rejected(f"--block {block}", TOO_LARGE, src, "--rate", 96000, "--block", block, timeout=60)
 

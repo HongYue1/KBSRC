@@ -175,7 +175,7 @@ def main():
             data = read(pout)
             return r.returncode, info, data
 
-        # One stereo frame 8 kHz -> 16 kHz (its output used to depend on the mode): the same samples in every mode
+        # One stereo frame 8 kHz -> 16 kHz, sensitive to the rounding mode: the same samples in every mode
         for engine in ENGINES:
             for mode in MODES:
                 rc, info, data = drive(engine, mode, "frame1", 8000, 16000, length="0.01")

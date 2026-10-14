@@ -20,7 +20,6 @@ namespace kbsrc::KBSRC_ISA {
 
 using namespace dsp;
 using detail::burg_extrap;
-using detail::kernel;
 using detail::kernel_spectrum;
 using detail::kernel_taps;
 
@@ -147,7 +146,7 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
                        : round_block((int)(fast_auto ? std::clamp(51200 / std::max(P, Q), 4 * margl, 10 * margl)
                                                      : 10 * margl));
     // Each block must leave a positive hop after its two margins. Automatic blocks always do (at least 4 * marg);
-    // an explicit block at or below 2 * marg used to crash the process.
+    // an explicit block at or below 2 * marg is rejected.
     if (nb <= 2 * margl) throw std::invalid_argument("option out of range");
     const int marg = (int)margl;
     // Short inputs: shrink blocks so up to 8 threads get work. Block size affects rounding, so this
@@ -163,12 +162,14 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
     long long base = (long long)marg * Q, tot = base + nblk * hop * Q + Nb;
     std::vector<std::vector<double>> out(ch, std::vector<double>(nout)), xx(ch);
     const int train = 4096;
+    double fd[32];   // raised-cosine fade over the last 32 extrapolated samples
+    for (int i = 0; i < 32; i++) { dd co, sn; dd_cis(i, 64, co, sn); fd[i] = ((dd(1.0) + co) * 0.5).hi; }
     for (int c = 0; c < ch; c++) {
         xx[c].resize(tot);                       // value-initialised; pads must be zero anyway
         double* X = xx[c].data() + base + pre;
         for (long long i = 0; i < nin; i++) X[i] = in[i * ch + c];
         if (opt.lpc_edges) {
-            long long ext = E + 32; double fd[32]; for (int i = 0; i < 32; i++) { dd c, sn; dd_cis(i, 64, c, sn); fd[i] = ((dd(1.0) + c) * 0.5).hi; }   // raised cosine
+            long long ext = E + 32;
             std::vector<double> tl = burg_extrap(X, nin, ext); for (int i = 0; i < 32; i++) tl[ext - 32 + i] *= fd[i];
             long long m = std::min<long long>(nin, train); std::vector<double> xr(m); for (long long i = 0; i < m; i++) xr[i] = X[m - 1 - i];
             std::vector<double> hd = burg_extrap(xr.data(), m, ext);
@@ -192,7 +193,7 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
         H = kernel_spectrum(h2, (int)Nk, (double)Nb);
         Jg = (int)std::min<long long>(Nk / 2, (long long)std::ceil((mn / 2.0 + 4 * fml) * Nb / fi));
     } else {
-        std::vector<dd> h = kernel(fk, c2 / gc, fk / gc, opt.length, opt.beta);
+        std::vector<dd> h = kernel_taps((int)Lk, c2 / gc, fk / gc, opt.beta);
         H = kernel_spectrum(h, up ? Mb : Nb, (double)Nb);
     }
     const double t1 = now();
