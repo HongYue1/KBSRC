@@ -107,9 +107,9 @@ The output is defined to the bit. These rules protect that:
 - The library and the command-line tool use only the C++20 standard library and threads (plus `shell32` on
   Windows). Do not add libraries, submodules, `FetchContent` or new Python packages; the test suites use only
   NumPy and SciPy beyond the standard library.
-- `bench/build_tools.sh` fetches the comparison resamplers at pinned versions (git tags, release tarballs, and
-  the ardftsrc-rs release zip checked by SHA-256) into `bench/tools/`. Change a pin only deliberately, with the
-  new tag or checksum in the script and re-measured results.
+- `bench/build_tools.sh` fetches the comparison resamplers at pinned versions (git commits, and release
+  tarballs and the ardftsrc-rs release zip checked by SHA-256) into `bench/tools/`. Change a pin only
+  deliberately, with the new commit or checksum in the script and re-measured results.
 
 ## Code and commits
 
