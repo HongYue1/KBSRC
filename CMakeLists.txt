@@ -12,7 +12,8 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "Build type" FORCE)
 endif()
 
-set(KBSRC_ARCH "native" CACHE STRING "native: tune for the build machine; portable: run on any CPU of this architecture (x86-64 adds an AVX2 engine picked at run time)")
+set(KBSRC_ARCH "native" CACHE STRING
+    "native: tune for the build CPU; portable: any CPU of this architecture (x86-64: AVX2 engine picked at run time)")
 set_property(CACHE KBSRC_ARCH PROPERTY STRINGS native portable)
 option(KBSRC_BUILD_TESTS "Register the Python test suite with CTest" ON)
 
@@ -89,9 +90,12 @@ if(KBSRC_BUILD_TESTS)
   find_package(Python3 COMPONENTS Interpreter)
   set(KBSRC_TEST_DATA "${PROJECT_SOURCE_DIR}/tests/data" CACHE PATH "Directory with the 64-bit float test WAVs")
   if(Python3_FOUND)
-    add_test(NAME rates COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/tests/test_rates.py --bin $<TARGET_FILE:kbsrc>)
-    add_test(NAME formats COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/tests/test_formats.py --bin $<TARGET_FILE:kbsrc>)
-    add_test(NAME robust COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/tests/test_robust.py --bin $<TARGET_FILE:kbsrc>)
+    add_test(NAME rates COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/tests/test_rates.py
+             --bin $<TARGET_FILE:kbsrc>)
+    add_test(NAME formats COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/tests/test_formats.py
+             --bin $<TARGET_FILE:kbsrc>)
+    add_test(NAME robust COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/tests/test_robust.py
+             --bin $<TARGET_FILE:kbsrc>)
     add_test(NAME alias COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/tests/test_alias.py
              --bin $<TARGET_FILE:kbsrc>)
     add_test(NAME reference COMMAND Python3::Interpreter ${PROJECT_SOURCE_DIR}/tests/test_reference.py

@@ -53,7 +53,8 @@ Interleaved run_lsr(const Interleaved& x, long long n, int ch, int fi, int fo, l
     d.data_in = in.data(); d.input_frames = n;
     d.data_out = out.data(); d.output_frames = nout + 64;
     d.src_ratio = (double)fo / fi; d.end_of_input = 1;
-    if (int e = src_simple(&d, SRC_SINC_BEST_QUALITY, ch)) throw std::runtime_error(std::string("libsamplerate: ") + src_strerror(e));
+    if (int e = src_simple(&d, SRC_SINC_BEST_QUALITY, ch))
+        throw std::runtime_error(std::string("libsamplerate: ") + src_strerror(e));
     Interleaved y((size_t)nout * ch, 0.0);
     for (long long i = 0; i < std::min<long long>(nout, d.output_frames_gen) * ch; i++) y[i] = out[i];
     return y;
@@ -84,7 +85,10 @@ Interleaved run_speex(const Interleaved& x, long long n, int ch, int fi, int fo,
 
 int main(int argc, char** argv) {
     try {
-        if (argc != 5) { std::fprintf(stderr, "usage: srcbench soxr|soxr-vhq|lsr|speex in.wav out.wav rate\n"); return 2; }
+        if (argc != 5) {
+            std::fprintf(stderr, "usage: srcbench soxr|soxr-vhq|lsr|speex in.wav out.wav rate\n");
+            return 2;
+        }
         const std::string lib = argv[1];
         const int fo = std::stoi(argv[4]);
         kbsrc::io::Audio a = kbsrc::io::read_wav(argv[2]);

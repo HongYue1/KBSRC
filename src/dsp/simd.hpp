@@ -38,14 +38,20 @@ struct DD4 {
     DD4(double x) : hi(_mm256_set1_pd(x)), lo(_mm256_setzero_pd()) {}
     DD4(const dd& x) : hi(_mm256_set1_pd(x.hi)), lo(_mm256_set1_pd(x.lo)) {}
 };
-static inline DD4 qts4(__m256d a, __m256d b) { __m256d s = _mm256_add_pd(a, b); return DD4(s, _mm256_sub_pd(b, _mm256_sub_pd(s, a))); }
+static inline DD4 qts4(__m256d a, __m256d b) {
+    __m256d s = _mm256_add_pd(a, b);
+    return DD4(s, _mm256_sub_pd(b, _mm256_sub_pd(s, a)));
+}
 static inline DD4 operator+(const DD4& a, const DD4& b) {
     __m256d s = _mm256_add_pd(a.hi, b.hi), bb = _mm256_sub_pd(s, a.hi);
     __m256d e = _mm256_add_pd(_mm256_sub_pd(a.hi, _mm256_sub_pd(s, bb)), _mm256_sub_pd(b.hi, bb));
     e = _mm256_add_pd(e, _mm256_add_pd(a.lo, b.lo));
     return qts4(s, e);
 }
-static inline DD4 operator-(const DD4& a) { __m256d m = _mm256_set1_pd(-0.0); return DD4(_mm256_xor_pd(a.hi, m), _mm256_xor_pd(a.lo, m)); }
+static inline DD4 operator-(const DD4& a) {
+    __m256d m = _mm256_set1_pd(-0.0);
+    return DD4(_mm256_xor_pd(a.hi, m), _mm256_xor_pd(a.lo, m));
+}
 static inline DD4 operator-(const DD4& a, const DD4& b) { return a + (-b); }
 static inline DD4 operator*(const DD4& a, const DD4& b) {
     __m256d p = _mm256_mul_pd(a.hi, b.hi), e = _mm256_fmsub_pd(a.hi, b.hi, p);
@@ -56,7 +62,9 @@ static inline DD4 operator*(const DD4& a, const DD4& b) {
 static inline V4 v4_load(const double* d) { return _mm256_loadu_pd(d); }
 static inline void v4_store(const V4& x, double* d) { _mm256_storeu_pd(d, x.v); }
 static inline DD4 dd4_load(const double* h, const double* l) { return DD4(_mm256_loadu_pd(h), _mm256_loadu_pd(l)); }
-static inline void dd4_store(const DD4& x, double* h, double* l) { _mm256_storeu_pd(h, x.hi); _mm256_storeu_pd(l, x.lo); }
+static inline void dd4_store(const DD4& x, double* h, double* l) {
+    _mm256_storeu_pd(h, x.hi); _mm256_storeu_pd(l, x.lo);
+}
 
 #else
 inline constexpr const char* simd_name = "generic";
@@ -121,8 +129,13 @@ static inline DD4 operator*(const DD4& a, const DD4& b) {
 #undef KBSRC_L4
 static inline V4 v4_load(const double* d) { V4 r; for (int i = 0; i < 4; i++) r.v[i] = d[i]; return r; }
 static inline void v4_store(const V4& x, double* d) { for (int i = 0; i < 4; i++) d[i] = x.v[i]; }
-static inline DD4 dd4_load(const double* h, const double* l) { DD4 r; for (int i = 0; i < 4; i++) { r.hi[i] = h[i]; r.lo[i] = l[i]; } return r; }
-static inline void dd4_store(const DD4& x, double* h, double* l) { for (int i = 0; i < 4; i++) { h[i] = x.hi[i]; l[i] = x.lo[i]; } }
+static inline DD4 dd4_load(const double* h, const double* l) {
+    DD4 r; for (int i = 0; i < 4; i++) { r.hi[i] = h[i]; r.lo[i] = l[i]; }
+    return r;
+}
+static inline void dd4_store(const DD4& x, double* h, double* l) {
+    for (int i = 0; i < 4; i++) { h[i] = x.hi[i]; l[i] = x.lo[i]; }
+}
 #endif
 
 }  // namespace kbsrc::KBSRC_ISA::dsp

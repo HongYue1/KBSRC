@@ -22,6 +22,7 @@ def write(path,x,sr,bits=64):
     d=x.astype('<f8' if bits==64 else '<f4').tobytes(); bps=bits//8
     fmt=struct.pack('<HHIIHHH',3,ch,sr,sr*ch*bps,ch*bps,bits,0)
     fact=struct.pack('<I',len(x))
-    out=b'WAVE'+b'fmt '+struct.pack('<I',len(fmt))+fmt+b'fact'+struct.pack('<I',4)+fact+b'data'+struct.pack('<I',len(d))+d
+    out=(b'WAVE'+b'fmt '+struct.pack('<I',len(fmt))+fmt+b'fact'+struct.pack('<I',4)+fact
+         +b'data'+struct.pack('<I',len(d))+d)
     open(path,'wb').write(b'RIFF'+struct.pack('<I',len(out))+out)
 

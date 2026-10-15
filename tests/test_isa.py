@@ -19,7 +19,8 @@ SKIP = 77
 FUNCTION = re.compile(r"^[0-9a-f]+ <(.+)>:$")
 INSTRUCTION = re.compile(r"^\s*[0-9a-f]+:\s+(\S+)\s*(.*)$")
 # Mnemonics that start with "v" without being AVX: VMX/SVM virtualisation and segment verification.
-NOT_AVX = re.compile(r"^(verr|verw|vm(call|clear|func|launch|load|mcall|ptrld|ptrst|read|resume|run|save|write|xoff|xon))")
+NOT_AVX = re.compile(r"^(verr|verw|vm(call|clear|func|launch|load|mcall|ptrld|ptrst|read|resume|run|save|write|"
+                     r"xoff|xon))")
 AVX2_ENGINE = "kbsrc::avx2::"
 AVX2_MANGLED = "5kbsrc4avx2"  # kbsrc::avx2 in a mangled name objdump cannot demangle (e.g. C++20 constraints)
 # Static initialisers run before main on every CPU, whichever translation unit they belong to.

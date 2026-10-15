@@ -60,5 +60,6 @@ for argv, code in [([tmp("ref.wav"), tmp("o.wav"), "--rate", "0"], 2),
                    ([tmp("missing.wav"), tmp("o.wav")], 1),
                    ([tmp("trunc.wav"), tmp("o.wav")], 1)]:
     r = kbsrc(args.bin, *argv, check=False)
-    c.check(r.returncode == code and r.stderr.startswith("kbsrc: "), f"error exit {code}: {' '.join(argv[2:]) or argv[0][-12:]}")
+    c.check(r.returncode == code and r.stderr.startswith("kbsrc: "),
+            f"error exit {code}: {' '.join(argv[2:]) or argv[0][-12:]}")
 c.done()

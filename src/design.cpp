@@ -41,7 +41,8 @@ std::vector<dd> kernel_spectrum(const std::vector<dd>& h, int Nlen, double scale
     RFFT<dd, dd, dd> R; R.init(Nlen); int Lk = (int)h.size() - 1;
     std::vector<dd> r(Nlen); r[0] = h[0];
     for (int n = 1; n <= Lk; n++) { r[n] = h[n]; r[Nlen - n] = h[n]; }
-    std::vector<cx<dd>> X(Nlen / 2 + 1), z(Nlen / 2), y(Nlen / 2); std::vector<Scratch32> sc(R.scratch_bytes() / 32 + 2);
+    std::vector<cx<dd>> X(Nlen / 2 + 1), z(Nlen / 2), y(Nlen / 2);
+    std::vector<Scratch32> sc(R.scratch_bytes() / 32 + 2);
     R.forward(r.data(), X.data(), z.data(), y.data(), sc.data());
     std::vector<dd> H(Nlen / 2 + 1); for (int k = 0; k <= Nlen / 2; k++) H[k] = X[k].re / scale_den;
     return H;

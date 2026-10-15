@@ -64,7 +64,10 @@ int run_engine(const std::vector<std::vector<double>>& xx, std::vector<std::vect
             } else if (!up) {
                 for (int k = 0; k < K; k++) { T hk(H[k]); Y[k] = {X[k].re * hk, X[k].im * hk}; }
                 int jmax = std::min(Nb / 2, Mb - 1);
-                for (int j = K; j <= jmax; j++) { T hj(H[j]); cx<T> v = {X[j].re * hj, X[j].im * hj}; Y[Mb - j] = Y[Mb - j] + conj(v); }
+                for (int j = K; j <= jmax; j++) {
+                    T hj(H[j]); cx<T> v = {X[j].re * hj, X[j].im * hj};
+                    Y[Mb - j] = Y[Mb - j] + conj(v);
+                }
                 Y[Mb / 2] = {T(2.0) * X[Mb / 2].re * T(H[Mb / 2]), T(0.0)};
             } else {
                 for (int k = 0; k < K; k++) {
@@ -86,8 +89,8 @@ int run_engine(const std::vector<std::vector<double>>& xx, std::vector<std::vect
 
 }  // namespace
 
-std::vector<std::vector<double>> resample_impl(const double* in, long long frames, int channels, int rate_in, int rate_out,
-                                          const Options& opt, Stats* stats) {
+std::vector<std::vector<double>> resample_impl(const double* in, long long frames, int channels, int rate_in,
+                                               int rate_out, const Options& opt, Stats* stats) {
     if (channels < 1 || frames < 0 || (frames > 0 && !in)) throw std::invalid_argument("bad input buffer");
     if (rate_in < 1 || rate_out < 1) throw std::invalid_argument("sample rates must be positive");
     if (!(opt.length > 0 && opt.length <= 10) || !(opt.beta > 0 && opt.beta <= 200) || opt.threads < 0 || opt.block < 0)
@@ -131,7 +134,9 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
     if ((opt.block ? opt.block : 10 * margl) > INT_MAX / 2 / std::max(P, Q))
         throw std::invalid_argument("block, rates or length too large");
     // default thread cap: the pipeline is memory-bandwidth bound beyond a few cores
-    int threads = opt.threads ? opt.threads : (int)std::min(std::max(1u, std::thread::hardware_concurrency()), opt.precision == Precision::Fast ? 4u : 8u);
+    int threads = opt.threads ? opt.threads
+                              : (int)std::min(std::max(1u, std::thread::hardware_concurrency()),
+                                              opt.precision == Precision::Fast ? 4u : 8u);
     long long E = L + Q, pre = (E + 64 + Q - 1) / Q * Q, span = pre + nin + E + 64;
     auto fix = [&](int v) { while (v % 2 || !smooth7(v / 2)) v++; return v; };   // non-7-smooth P/Q -> Bluestein
     // Automatic blocks span 10 margins, except in Fast, which is limited by memory traffic rather than arithmetic:
@@ -170,8 +175,10 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
         for (long long i = 0; i < nin; i++) X[i] = in[i * ch + c];
         if (opt.lpc_edges) {
             long long ext = E + 32;
-            std::vector<double> tl = burg_extrap(X, nin, ext); for (int i = 0; i < 32; i++) tl[ext - 32 + i] *= fd[i];
-            long long m = std::min<long long>(nin, train); std::vector<double> xr(m); for (long long i = 0; i < m; i++) xr[i] = X[m - 1 - i];
+            std::vector<double> tl = burg_extrap(X, nin, ext);
+            for (int i = 0; i < 32; i++) tl[ext - 32 + i] *= fd[i];
+            long long m = std::min<long long>(nin, train);
+            std::vector<double> xr(m); for (long long i = 0; i < m; i++) xr[i] = X[m - 1 - i];
             std::vector<double> hd = burg_extrap(xr.data(), m, ext);
             for (int i = 0; i < 32; i++) hd[ext - 32 + i] *= fd[i];   // = head[:32] *= fade[::-1] after reversal
             for (long long i = 0; i < ext; i++) { X[nin + i] = tl[i]; X[-1 - i] = hd[i]; }
@@ -189,7 +196,8 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
         long long g2 = (long long)std::gcd((unsigned long long)c2 * (unsigned long long)Nb,
                                            (unsigned long long)Nk * (unsigned long long)fi);
         double fk2 = (double)Nk * fi / Nb;
-        std::vector<dd> h2 = kernel_taps((int)std::floor(opt.length * fk2), (long long)(A / g2), (long long)(B / g2), opt.beta);
+        std::vector<dd> h2 = kernel_taps((int)std::floor(opt.length * fk2), (long long)(A / g2), (long long)(B / g2),
+                                         opt.beta);
         H = kernel_spectrum(h2, (int)Nk, (double)Nb);
         Jg = (int)std::min<long long>(Nk / 2, (long long)std::ceil((mn / 2.0 + 4 * fml) * Nb / fi));
     } else {
@@ -200,9 +208,15 @@ std::vector<std::vector<double>> resample_impl(const double* in, long long frame
     threads = (int)std::max<long long>(1, std::min<long long>(threads, (long long)ch * ((nblk + 3) / 4)));
     long long o = pre / Q * P;
     switch (opt.precision) {
-        case Precision::Fast: threads = run_engine<double, double, V4>(xx, out, P, Q, up, nb, marg, hop, nblk, o, nout, H, threads, Jg); break;
-        case Precision::LongDouble: threads = run_engine<LD, LD, LD>(xx, out, P, Q, up, nb, marg, hop, nblk, o, nout, H, threads, Jg); break;
-        default: threads = run_engine<dd, dd, DD4>(xx, out, P, Q, up, nb, marg, hop, nblk, o, nout, H, threads, Jg); break;
+        case Precision::Fast:
+            threads = run_engine<double, double, V4>(xx, out, P, Q, up, nb, marg, hop, nblk, o, nout, H, threads, Jg);
+            break;
+        case Precision::LongDouble:
+            threads = run_engine<LD, LD, LD>(xx, out, P, Q, up, nb, marg, hop, nblk, o, nout, H, threads, Jg);
+            break;
+        default:
+            threads = run_engine<dd, dd, DD4>(xx, out, P, Q, up, nb, marg, hop, nblk, o, nout, H, threads, Jg);
+            break;
     }
     if (stats) {
         stats->isa = simd_name;

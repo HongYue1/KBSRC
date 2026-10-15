@@ -114,7 +114,7 @@ The output is defined to the bit. These rules protect that:
 ## Code and commits
 
 - C++20. 4-space indentation (2 in CMake, JSON and YAML), UTF-8, LF line endings, final newline, no trailing
-  whitespace, lines up to 120 columns (`.editorconfig`, `.gitattributes`).
+  whitespace, lines up to 120 columns outside Markdown (`.editorconfig`, `.gitattributes`).
 - Bad arguments to the library throw `std::invalid_argument`. The command-line tool prints `kbsrc: <reason>`,
   exits with status 1 (2 for usage errors) and writes no output file for a rejected conversion.
 - Keep comments and README statements true after a change; update them in the same commit.

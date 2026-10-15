@@ -109,7 +109,9 @@ int sample_bytes(const std::string& fmt) { return fmt == "f64" ? 8 : fmt == "s24
 Audio read_wav(const char* path) {
     File fh{uopen(path, "rb")}; FILE* f = fh.f; if (!f) fail("cannot open input");
     FSEEK(f, 0, SEEK_END); long long sz = FTELL(f); FSEEK(f, 0, SEEK_SET);
-    uint8_t hd[12]; if (sz < 12 || fread(hd, 1, 12, f) != 12 || memcmp(hd, "RIFF", 4) || memcmp(hd + 8, "WAVE", 4)) fail("not a RIFF/WAVE file");
+    uint8_t hd[12];
+    if (sz < 12 || fread(hd, 1, 12, f) != 12 || memcmp(hd, "RIFF", 4) || memcmp(hd + 8, "WAVE", 4))
+        fail("not a RIFF/WAVE file");
     auto u16 = [](const uint8_t* p) { return (unsigned)p[0] | (unsigned)p[1] << 8; };
     auto u32 = [&](const uint8_t* p) { return (uint32_t)u16(p) | (uint32_t)u16(p + 2) << 16; };
     long long pos = 12, dpos = -1, dlen = 0; int tag = 0, ch = 0, bits = 0, align = 0; uint32_t rate = 0;
@@ -118,7 +120,8 @@ Audio read_wav(const char* path) {
         uint8_t c[8]; FSEEK(f, pos, SEEK_SET); if (fread(c, 1, 8, f) != 8) break;
         uint32_t cl = u32(c + 4); long long body = pos + 8;
         if (!memcmp(c, "fmt ", 4)) {
-            uint8_t fm[40] = {}; size_t n = fread(fm, 1, std::min<uint32_t>(cl, 40), f); if (n < 16) fail("bad fmt chunk");
+            uint8_t fm[40] = {}; size_t n = fread(fm, 1, std::min<uint32_t>(cl, 40), f);
+            if (n < 16) fail("bad fmt chunk");
             fmt = true;
             tag = u16(fm); ch = u16(fm + 2); rate = u32(fm + 4); align = u16(fm + 12); bits = u16(fm + 14);
             if (tag == 0xFFFE && n >= 26) tag = u16(fm + 24);
@@ -133,7 +136,8 @@ Audio read_wav(const char* path) {
     if (!ch) fail("invalid WAV channel count");
     if (!rate || rate > INT_MAX) fail("invalid WAV sample rate");
     if (align <= 0 || align % ch) fail("invalid WAV block alignment");
-    if (!(tag == 1 || (tag == 3 && (bits == 32 || bits == 64)))) fail("unsupported WAV format (need PCM or IEEE float)");
+    if (!(tag == 1 || (tag == 3 && (bits == 32 || bits == 64))))
+        fail("unsupported WAV format (need PCM or IEEE float)");
     // The sample size must match the block alignment. PCM samples take the fewest whole bytes that hold them
     // (12-bit audio in 16-bit containers is valid: left-justified, it decodes as 16-bit), so 0 bits is invalid.
     // Float samples take exactly 4 or 8 bytes, the size the reader copies per sample.
@@ -150,9 +154,19 @@ Audio read_wav(const char* path) {
         if (tag == 3 && bits == 64) memcpy(o, data, 8 * m);
         else if (tag == 3) for (size_t k = 0; k < m; k++) { float v; memcpy(&v, data + 4 * k, 4); o[k] = v; }
         else if (bps == 1) for (size_t k = 0; k < m; k++) o[k] = ((int)data[k] - 128) / 128.0;
-        else if (bps == 2) for (size_t k = 0; k < m; k++) o[k] = (int16_t)(data[2 * k] | data[2 * k + 1] << 8) / 32768.0;
-        else if (bps == 3) for (size_t k = 0; k < m; k++) { const uint8_t* p = data + 3 * k; int32_t v = p[0] | p[1] << 8 | p[2] << 16; if (v & 0x800000) v -= 1 << 24; o[k] = v / 8388608.0; }
-        else for (size_t k = 0; k < m; k++) { const uint8_t* p = data + 4 * k; o[k] = (int32_t)(p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24) / 2147483648.0; }
+        else if (bps == 2)
+            for (size_t k = 0; k < m; k++) o[k] = (int16_t)(data[2 * k] | data[2 * k + 1] << 8) / 32768.0;
+        else if (bps == 3)
+            for (size_t k = 0; k < m; k++) {
+                const uint8_t* p = data + 3 * k; int32_t v = p[0] | p[1] << 8 | p[2] << 16;
+                if (v & 0x800000) v -= 1 << 24;
+                o[k] = v / 8388608.0;
+            }
+        else
+            for (size_t k = 0; k < m; k++) {
+                const uint8_t* p = data + 4 * k;
+                o[k] = (int32_t)(p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24) / 2147483648.0;
+            }
     }
     return a;
 }
@@ -164,9 +178,11 @@ void check_wav_output(int ch, int rate, const std::string& fmt) {
     if (rate < 1 || rate * frame > 0xFFFFFFFFLL) fail("sample rate too high for a WAV file with this many channels");
 }
 
-void write_wav(const char* path, const std::vector<std::vector<double>>& y, int ch, long long frames, int rate, const std::string& fmt, bool dither, long long& clipped) {
+void write_wav(const char* path, const std::vector<std::vector<double>>& y, int ch, long long frames, int rate,
+               const std::string& fmt, bool dither, long long& clipped) {
     check_wav_output(ch, rate, fmt);
-    bool fl = fmt == "f64" || fmt == "f32"; int bits = fmt == "f64" ? 64 : fmt == "f32" ? 32 : fmt == "s32" ? 32 : fmt == "s24" ? 24 : 16;
+    bool fl = fmt == "f64" || fmt == "f32";
+    int bits = fmt == "f64" ? 64 : fmt == "f32" ? 32 : fmt == "s32" ? 32 : fmt == "s24" ? 24 : 16;
     int kind = fmt == "f64" ? 0 : fmt == "f32" ? 1 : 2;
     const int bps = bits / 8, align = ch * bps;
     if (frames < 0 || frames > (0xFFFFFFFFLL - 80) / align) fail("output too large for WAV (4 GB limit)");

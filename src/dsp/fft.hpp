@@ -59,10 +59,15 @@ static inline bool smooth7(long long n) {
 }
 static inline long long next_smooth7(long long n) { while (!smooth7(n)) n++; return n; }
 
-template <class T, class W, int R> static inline void odd_bfly(const cx<T>* src, size_t sm, cx<T>* dst, int s, int q, const W* cr, const W* sr, const cx<W>* tw, bool p0) {
+template <class T, class W, int R>
+static inline void odd_bfly(const cx<T>* src, size_t sm, cx<T>* dst, int s, int q, const W* cr, const W* sr,
+                            const cx<W>* tw, bool p0) {
     constexpr int H = (R - 1) / 2;
     cx<T> a0 = src[q], S[H], D[H];
-    for (int t = 1; t <= H; t++) { cx<T> x = src[q + t * sm], y = src[q + (R - t) * sm]; S[t - 1] = x + y; D[t - 1] = x - y; }
+    for (int t = 1; t <= H; t++) {
+        cx<T> x = src[q + t * sm], y = src[q + (R - t) * sm];
+        S[t - 1] = x + y; D[t - 1] = x - y;
+    }
     cx<T> sum = a0; for (int t = 0; t < H; t++) sum = sum + S[t];
     dst[q] = sum;
     for (int u = 1; u <= H; u++) {
@@ -101,7 +106,10 @@ template <class T, class W = T> struct SFFT {  // Stockham forward complex DFT, 
             st.push_back(std::move(g)); ns /= r; s *= r;
         }
         int rr[3] = {3, 5, 7};
-        for (int i = 0; i < 3; i++) for (int k = 0; k < rr[i]; k++) { dd c, sn; dd_cis(k, rr[i], c, sn); cr[i][k] = from_dd<W>(c); sr[i][k] = from_dd<W>(sn); }
+        for (int i = 0; i < 3; i++)
+            for (int k = 0; k < rr[i]; k++) {
+                dd c, sn; dd_cis(k, rr[i], c, sn); cr[i][k] = from_dd<W>(c); sr[i][k] = from_dd<W>(sn);
+            }
     }
     // in: x (n), work: y (n). returns pointer to the result (x or y).
     cx<T>* run(cx<T>* x, cx<T>* y) const {
@@ -118,16 +126,23 @@ template <class T, class W = T> struct SFFT {  // Stockham forward complex DFT, 
                         cx<T> t0 = a0 + a2, t1 = a0 - a2, t2 = a1 + a3, t3 = mul_mi(a1 - a3);
                         dst[q] = t0 + t2;
                         if (p == 0) { dst[q + s] = t1 + t3; dst[q + 2 * s] = t0 - t2; dst[q + 3 * s] = t1 - t3; }
-                        else { dst[q + s] = mulw(t1 + t3, tw[0]); dst[q + 2 * s] = mulw(t0 - t2, tw[1]); dst[q + 3 * s] = mulw(t1 - t3, tw[2]); }
+                        else {
+                            dst[q + s] = mulw(t1 + t3, tw[0]); dst[q + 2 * s] = mulw(t0 - t2, tw[1]);
+                            dst[q + 3 * s] = mulw(t1 - t3, tw[2]);
+                        }
                     }
                 } else if (r == 2) {
                     for (int q = 0; q < s; q++) {
                         cx<T> a0 = src[q], a1 = src[q + sm];
                         dst[q] = a0 + a1; dst[q + s] = p ? mulw(a0 - a1, tw[0]) : a0 - a1;
                     }
-                } else if (r == 3) { for (int q = 0; q < s; q++) odd_bfly<T, W, 3>(src, sm, dst, s, q, cr[0], sr[0], tw, p == 0); }
-                else if (r == 5) { for (int q = 0; q < s; q++) odd_bfly<T, W, 5>(src, sm, dst, s, q, cr[1], sr[1], tw, p == 0); }
-                else { for (int q = 0; q < s; q++) odd_bfly<T, W, 7>(src, sm, dst, s, q, cr[2], sr[2], tw, p == 0); }
+                } else if (r == 3) {
+                    for (int q = 0; q < s; q++) odd_bfly<T, W, 3>(src, sm, dst, s, q, cr[0], sr[0], tw, p == 0);
+                } else if (r == 5) {
+                    for (int q = 0; q < s; q++) odd_bfly<T, W, 5>(src, sm, dst, s, q, cr[1], sr[1], tw, p == 0);
+                } else {
+                    for (int q = 0; q < s; q++) odd_bfly<T, W, 7>(src, sm, dst, s, q, cr[2], sr[2], tw, p == 0);
+                }
             }
             std::swap(a, b);
         }
@@ -172,8 +187,10 @@ template <> struct Lane<dd, DD4> {
     static constexpr int N = 4;
     static cx<DD4> packw(const cx<dd>* const* p) {
 #if KBSRC_SIMD_AVX2
-        return {DD4(_mm256_set_pd(p[3]->re.hi, p[2]->re.hi, p[1]->re.hi, p[0]->re.hi), _mm256_set_pd(p[3]->re.lo, p[2]->re.lo, p[1]->re.lo, p[0]->re.lo)),
-                DD4(_mm256_set_pd(p[3]->im.hi, p[2]->im.hi, p[1]->im.hi, p[0]->im.hi), _mm256_set_pd(p[3]->im.lo, p[2]->im.lo, p[1]->im.lo, p[0]->im.lo))};
+        return {DD4(_mm256_set_pd(p[3]->re.hi, p[2]->re.hi, p[1]->re.hi, p[0]->re.hi),
+                    _mm256_set_pd(p[3]->re.lo, p[2]->re.lo, p[1]->re.lo, p[0]->re.lo)),
+                DD4(_mm256_set_pd(p[3]->im.hi, p[2]->im.hi, p[1]->im.hi, p[0]->im.hi),
+                    _mm256_set_pd(p[3]->im.lo, p[2]->im.lo, p[1]->im.lo, p[0]->im.lo))};
 #else
         double a[4], b[4], c[4], d[4];
         for (int l = 0; l < 4; l++) { a[l] = p[l]->re.hi; b[l] = p[l]->re.lo; c[l] = p[l]->im.hi; d[l] = p[l]->im.lo; }
@@ -211,8 +228,11 @@ template <class S, class W = S, class T = S> struct CFFT {
         if (!smooth7(n)) {
             m = (int)next_smooth7(2LL * n - 1); inner = std::make_shared<CFFT>(); inner->init(m);
             bc.resize(n); std::vector<cx<dd>> v(m, cx<dd>{dd(0.0), dd(0.0)}), w(m);
-            for (long long t = 0; t < n; t++) { long long e = (long long)((__int128)t * t % (2LL * n)); dd c, sn; dd_cis(e, 2LL * n, c, sn); bc[t] = {from_dd<W>(c), from_dd<W>(sn)};
-                v[t] = {c, sn}; if (t) v[m - t] = {c, sn}; }
+            for (long long t = 0; t < n; t++) {
+                long long e = (long long)((__int128)t * t % (2LL * n));
+                dd c, sn; dd_cis(e, 2LL * n, c, sn); bc[t] = {from_dd<W>(c), from_dd<W>(sn)};
+                v[t] = {c, sn}; if (t) v[m - t] = {c, sn};
+            }
             CFFT<dd, dd, dd> fd; fd.init(m); std::vector<Scratch32> sc(fd.scratch_bytes() / 32 + 2);
             cx<dd>* V = fd.run(v.data(), w.data(), sc.data()); Vf.resize(m);
             for (int k = 0; k < m; k++) Vf[k] = {from_dd<W>(V[k].re / (double)m), from_dd<W>(V[k].im / (double)m)};
@@ -224,7 +244,11 @@ template <class S, class W = S, class T = S> struct CFFT {
         N1 = best; N2 = n / best; if (N1 < 8) { four = false; sd.init(n); return; }
         s1.init(N1); s2.init(N2); tw.resize((size_t)n);
         CisTable ct(n);
-        for (int k1 = 0; k1 < N1; k1++) for (int n2 = 0; n2 < N2; n2++) { dd c, sn; ct.get(-(long long)k1 * n2, c, sn); tw[(size_t)k1 * N2 + n2] = {from_dd<W>(c), from_dd<W>(sn)}; }
+        for (int k1 = 0; k1 < N1; k1++)
+            for (int n2 = 0; n2 < N2; n2++) {
+                dd c, sn; ct.get(-(long long)k1 * n2, c, sn);
+                tw[(size_t)k1 * N2 + n2] = {from_dd<W>(c), from_dd<W>(sn)};
+            }
         if constexpr (NL > 1) {
             lane_tw.resize((size_t)((N2 + NL - 1) / NL) * N1);
             const cx<W>* wp[NL];
@@ -242,7 +266,8 @@ template <class S, class W = S, class T = S> struct CFFT {
     // x: input (n, destroyed), y: n, scratch: scratch_bytes(). returns result pointer (x or y).
     cx<S>* run(cx<S>* x, cx<S>* y, void* scratch) const {
         if (m) {   // X_k = conj(b_k) * sum_j (x_j conj(b_j)) b_{k-j}
-            cx<S>* u = (cx<S>*)scratch; cx<S>* u2 = u + m; void* isc = (void*)(((uintptr_t)(u2 + m) + 63) & ~(uintptr_t)63);
+            cx<S>* u = (cx<S>*)scratch; cx<S>* u2 = u + m;
+            void* isc = (void*)(((uintptr_t)(u2 + m) + 63) & ~(uintptr_t)63);
             for (int j = 0; j < n; j++) u[j] = mulw(x[j], conj(bc[j]));
             for (int j = n; j < m; j++) u[j] = {S(0.0), S(0.0)};
             cx<S>* U = inner->run(u, u2, isc);
@@ -257,7 +282,10 @@ template <class S, class W = S, class T = S> struct CFFT {
         const cx<S>* ip[4]; cx<S>* op[4];
         for (int c0 = 0; c0 < N2; c0 += NL) {
             int g = std::min(NL, N2 - c0);
-            for (int r = 0; r < N1; r++) { for (int j = 0; j < NL; j++) ip[j] = x + (size_t)r * N2 + c0 + std::min(j, g - 1); tile[r] = lane_pack<S, T>(ip); }
+            for (int r = 0; r < N1; r++) {
+                for (int j = 0; j < NL; j++) ip[j] = x + (size_t)r * N2 + c0 + std::min(j, g - 1);
+                tile[r] = lane_pack<S, T>(ip);
+            }
             cx<T>* res = s1.run(tile, wk);
             for (int k1 = 0; k1 < N1; k1++) {
                 cx<T> v = res[k1];
@@ -271,9 +299,15 @@ template <class S, class W = S, class T = S> struct CFFT {
         }
         for (int r0 = 0; r0 < N1; r0 += NL) {
             int g = std::min(NL, N1 - r0);
-            for (int i = 0; i < N2; i++) { for (int j = 0; j < NL; j++) ip[j] = x + (size_t)(r0 + std::min(j, g - 1)) * N2 + i; tile[i] = lane_pack<S, T>(ip); }
+            for (int i = 0; i < N2; i++) {
+                for (int j = 0; j < NL; j++) ip[j] = x + (size_t)(r0 + std::min(j, g - 1)) * N2 + i;
+                tile[i] = lane_pack<S, T>(ip);
+            }
             cx<T>* res = s2.run(tile, wk);
-            for (int k2 = 0; k2 < N2; k2++) { for (int j = 0; j < g; j++) op[j] = y + (size_t)N1 * k2 + r0 + j; LN::unpack(res[k2], op, g); }
+            for (int k2 = 0; k2 < N2; k2++) {
+                for (int j = 0; j < g; j++) op[j] = y + (size_t)N1 * k2 + r0 + j;
+                LN::unpack(res[k2], op, g);
+            }
         }
         return y;
     }
@@ -314,7 +348,8 @@ static inline void reconstruction_store4(const cx<DD4>& v, cx<dd>* const* out) {
     for (int i = 0; i < 4; i++) *out[i] = {dd(rh[i], rl[i]), dd(ih[i], il[i])};
 }
 
-template <class T, class W = T, class C = T> struct RFFT {  // real transform of even length N via complex N/2 (C: SIMD compute type)
+// Real transform of even length N through a complex one of length N/2 (C: SIMD compute type).
+template <class T, class W = T, class C = T> struct RFFT {
     int N = 0, h = 0; CFFT<T, W, C> c; std::vector<cx<W>> w;  // w[k] = e^{-2 pi i k/N}
     void init(int N_) {
         N = N_; h = N / 2; if (N % 2) throw std::runtime_error("RFFT length must be even");

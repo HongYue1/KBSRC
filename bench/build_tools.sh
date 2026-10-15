@@ -14,7 +14,8 @@ fetch_tar() { [ -d "$S/$1" ] || { curl -sSLf -o "$S/$1.tar" "$2"; tar xf "$S/$1.
 # ardftsrc-rs v0.3.1, official Windows release binary
 if [ ! -x "$T/ardftsrc-rs/ardftsrc-rs.exe" ] && [ "${OS:-}" = Windows_NT ]; then
   mkdir -p "$T/ardftsrc-rs"
-  curl -sSLf -o "$T/ardftsrc-rs/a.zip" https://github.com/phayes/ardftsrc-rs/releases/download/v0.3.1/ardftsrc-rs-x86_64-pc-windows-msvc.zip
+  curl -sSLf -o "$T/ardftsrc-rs/a.zip" \
+    https://github.com/phayes/ardftsrc-rs/releases/download/v0.3.1/ardftsrc-rs-x86_64-pc-windows-msvc.zip
   echo "f2c51a801225879ed2a0f5881e119182368da83ab70d94d5edded6ebd434c6a5  $T/ardftsrc-rs/a.zip" | sha256sum -c -
   (cd "$T/ardftsrc-rs" && unzip -o -q a.zip && rm a.zip)
 fi
@@ -26,7 +27,8 @@ cmake -S "$S/soxr" -B "$S/soxr/build" "${CM[@]}" -DCMAKE_C_FLAGS="$FLAGS" -DBUIL
 cmake --build "$S/soxr/build" >/dev/null && cmake --install "$S/soxr/build" >/dev/null
 
 # libsamplerate 0.2.2
-fetch_tar libsamplerate-0.2.2 https://github.com/libsndfile/libsamplerate/releases/download/0.2.2/libsamplerate-0.2.2.tar.xz
+fetch_tar libsamplerate-0.2.2 \
+  https://github.com/libsndfile/libsamplerate/releases/download/0.2.2/libsamplerate-0.2.2.tar.xz
 cmake -S "$S/libsamplerate-0.2.2" -B "$S/libsamplerate-0.2.2/build" "${CM[@]}" -DCMAKE_C_FLAGS="$FLAGS" \
   -DBUILD_SHARED_LIBS=OFF -DBUILD_TESTING=OFF -DLIBSAMPLERATE_EXAMPLES=OFF -DLIBSAMPLERATE_INSTALL=ON >/dev/null
 cmake --build "$S/libsamplerate-0.2.2/build" >/dev/null && cmake --install "$S/libsamplerate-0.2.2/build" >/dev/null
@@ -34,11 +36,13 @@ cmake --build "$S/libsamplerate-0.2.2/build" >/dev/null && cmake --install "$S/l
 # speexdsp 1.2.1 (resampler only, built into srcbench)
 fetch_tar speexdsp-1.2.1 https://downloads.xiph.org/releases/speex/speexdsp-1.2.1.tar.gz
 mkdir -p "$T/gen"
-printf '#pragma once\n#include <stdint.h>\ntypedef int16_t spx_int16_t;\ntypedef uint16_t spx_uint16_t;\ntypedef int32_t spx_int32_t;\ntypedef uint32_t spx_uint32_t;\n' > "$T/gen/speexdsp_config_types.h"
+printf '%s\n' '#pragma once' '#include <stdint.h>' 'typedef int16_t spx_int16_t;' 'typedef uint16_t spx_uint16_t;' \
+  'typedef int32_t spx_int32_t;' 'typedef uint32_t spx_uint32_t;' > "$T/gen/speexdsp_config_types.h"
 
 # SoX 14.4.2 (last release). GCC 14+ rejects some of its old C, so those errors are downgraded to warnings.
 fetch_git sox https://git.code.sf.net/p/sox/code sox-14.4.2
-cmake -S "$S/sox" -B "$S/sox/build" "${CM[@]}" -DCMAKE_C_FLAGS="$FLAGS -std=gnu17 -Wno-error=implicit-function-declaration -Wno-error=incompatible-pointer-types -Wno-error=int-conversion" >/dev/null
+SOX_WNO="-Wno-error=implicit-function-declaration -Wno-error=incompatible-pointer-types -Wno-error=int-conversion"
+cmake -S "$S/sox" -B "$S/sox/build" "${CM[@]}" -DCMAKE_C_FLAGS="$FLAGS -std=gnu17 $SOX_WNO" >/dev/null
 cmake --build "$S/sox/build" --target sox >/dev/null
 
 # srcbench harness

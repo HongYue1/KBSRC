@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Converts the Hydrogenaudio 96 kHz test signals to 44.1 kHz with every resampler (for scoring),
-# then times a 180 s stereo 96 kHz noise file (bench/gen_noise.cpp). Output: bench/out/<id>/*.wav and bench/out/timing.tsv
+# then times a 180 s stereo 96 kHz noise file (bench/gen_noise.cpp).
+# Output: bench/out/<id>/*.wav and bench/out/timing.tsv
 # usage: bench/run.sh [runs=5] [ids...]   (SKIP_CONVERT=1 to only re-time)
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -32,14 +33,17 @@ convert() {
 }
 
 IDS=("$@")
-[ ${#IDS[@]} -gt 0 ] || IDS=(kbsrc-exact kbsrc-exact-1t kbsrc-fast kbsrc-fast-1t ardftsrc-f64 ardftsrc-dd sox soxr-vhq soxr libsamplerate speexdsp)
+[ ${#IDS[@]} -gt 0 ] || IDS=(kbsrc-exact kbsrc-exact-1t kbsrc-fast kbsrc-fast-1t ardftsrc-f64 ardftsrc-dd
+                             sox soxr-vhq soxr libsamplerate speexdsp)
 FILES=(impulse sweep_1_to_44KHz aliasing150db intermodulation_sine gaplesstest_s gaplesstest_m)
 mkdir -p "$O"
 
 for id in "${IDS[@]}"; do
   [ "${SKIP_CONVERT:-0}" = 1 ] && continue
   mkdir -p "$O/$id"
-  for f in "${FILES[@]}"; do convert "$id" "$DATA/$f-64bitfloat.wav" "$O/$id/$f-64bitfloat.wav" 2>>"$O/$id/stderr.log"; done
+  for f in "${FILES[@]}"; do
+    convert "$id" "$DATA/$f-64bitfloat.wav" "$O/$id/$f-64bitfloat.wav" 2>>"$O/$id/stderr.log"
+  done
   echo "converted $id"
 done
 

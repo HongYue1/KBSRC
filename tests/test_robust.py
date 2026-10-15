@@ -4,8 +4,9 @@ Covers block sizes (an explicit --block must leave a hop after twice the kernel 
 overflow the int transform sizes), kernel lengths (shorter than one kernel sample, or too short for the transition
 band to fit below the lower Nyquist frequency), input rates and the WAV header checks (a PCM header with 0 bits per
 sample, an IEEE float header whose sample size disagrees with the block alignment, zero channels or rates beyond
-an int; output headers must hold the frame size in 16 bits and the byte rate in 32). A rejection must exit with status 1, print
-"kbsrc: <reason>" and write no output file. Stdlib only: it does not import common.py, which needs numpy.
+an int; output headers must hold the frame size in 16 bits and the byte rate in 32). A rejection must exit with
+status 1, print "kbsrc: <reason>" and write no output file. Stdlib only: it does not import common.py, which
+needs numpy.
 
 Usage: test_robust.py --bin <kbsrc>
 """
