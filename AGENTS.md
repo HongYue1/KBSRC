@@ -55,9 +55,12 @@ ctest --test-dir build/portable --output-on-failure      # or: ctest --preset re
   `uv run --no-project --with numpy,scipy python tests/test_rates.py --bin build/portable/kbsrc.exe`.
 - `reference` needs the 64-bit float WAVs of the Hydrogenaudio test pack in `tests/data/` (`KBSRC_TEST_DATA`
   overrides the path). If any is missing it compares the ones present and exits 77, which CTest reports as skipped.
-  With GCC 16.1 on Windows four checks currently exceed their limits: gaplesstest_s exact (5.4e-15),
-  sweep_1_to_44KHz fast and exact (5.7e-6) and aliasing150db exact (8.4e-15). Treat any other failure as a
-  regression, and a change in these values as a change of output that needs an explanation.
+  The reference computes its exact FFT and its Burg edge prediction in `np.longdouble`. NumPy on Windows has no
+  extended long double (`np.finfo(np.longdouble).eps` is 2.2e-16), so there both run in float64, the test prints
+  a note and four checks exceed their limits: gaplesstest_s exact (5.4e-15), sweep_1_to_44KHz fast and exact
+  (5.7e-6, from the samples predicted before the sweep's 1 Hz start) and aliasing150db exact (8.4e-15). On
+  Linux, where NumPy's long double has 80 bits, every check passes with the same converter output. Treat any
+  other failure as a regression, and a change in these values as a change of output that needs an explanation.
 - Run every suite on Release and on a Debug build with both engines before committing a code change.
 
 ## Filter
