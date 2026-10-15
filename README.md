@@ -37,16 +37,16 @@ Input can be 8/16/24/32-bit PCM or 32/64-bit float, with any number of channels.
 
 ## Comparison
 
-All runs were done on one machine (Ryzen 7 5800H, Windows 11). Time is the median of 5 runs after warm-up, converting a 180-second stereo 96 kHz noise file to 44.1 kHz, 64-bit float in and out, wall-clock including file I/O. The KBSRC rows were refreshed on 2026-10-13 at a fixed 3600 MHz using `bench/run.sh` and the portable GCC 16.1 build with the writer update. Competitor timings are from the earlier batch on the same date, machine and clock.
+All runs were done on one machine (Ryzen 7 5800H, Windows 11). Time is the median of 5 runs after warm-up, converting a 180-second stereo 96 kHz noise file to 44.1 kHz, 64-bit float in and out, wall-clock including file I/O. The KBSRC rows were measured on 2026-10-15 at a fixed 3600 MHz using `bench/run.sh` and the portable GCC 16.1 build of 1.3.0. Competitor timings are from a batch on 2026-10-13 on the same machine and clock.
 
-Quality is the Hydrogenaudio balanced score, computed locally with the official scripts in GNU Octave 11.3. The KBSRC rows are for release 1.2.4, whose transition band straddled the output Nyquist frequency; the current code keeps it below (see [How it works](#how-it-works)) and has not been re-measured here yet.
+Quality is the Hydrogenaudio balanced score, computed locally with the official scripts in GNU Octave 11.3. KBSRC keeps its transition band below the output Nyquist frequency (see [How it works](#how-it-works)), so nothing above that frequency folds back into the output. Letting the band straddle Nyquist scores higher on bandwidth but folds content back: release 1.2.4 did that and scored 99.93 (exact) and 99.87 (fast).
 
 | Resampler | Version | Settings | Threads | Score | Time |
 |---|---|---|---|---|---|
-| kbsrc | 1.2.4 | `--mode exact` | 8 | 99.93 | 1.137 s |
-| kbsrc | 1.2.4 | `--mode exact -t 1` | 1 | 99.93 | 2.479 s |
-| kbsrc | 1.2.4 | `--mode fast` | 4 | 99.87 | 0.628 s |
-| kbsrc | 1.2.4 | `--mode fast -t 1` | 1 | 99.87 | 0.768 s |
+| kbsrc | 1.3.0 | `--mode exact` | 8 | 99.85 | 1.331 s |
+| kbsrc | 1.3.0 | `--mode exact -t 1` | 1 | 99.85 | 3.033 s |
+| kbsrc | 1.3.0 | `--mode fast` | 4 | 99.79 | 0.702 s |
+| kbsrc | 1.3.0 | `--mode fast -t 1` | 1 | 99.79 | 0.965 s |
 | ardftsrc-rs | 0.3.1 | Insane, f64 | default | 99.74 | 2.250 s |
 | ardftsrc-rs | 0.3.1 | Insane, double-double | default | 99.92 | 30.985 s |
 | soxr | 0.1.3 | `SOXR_32_BITQ`, linear phase, 99.5% | 1 | 82.56 | 0.697 s |
@@ -63,16 +63,16 @@ To reproduce, put the Hydrogenaudio test pack in `tests/data/`, then run `bench/
 
 ### AVX2 vs generic
 
-KBSRC 1.2.4 on the same Ryzen 7 5800H at 3600 MHz, using the portable build and the same 180-second f64 noise conversion. Each engine was warmed up, then timed in five alternating trials with Python subprocess wall-clock timing, including setup and file I/O.
+KBSRC 1.3.0 on the same Ryzen 7 5800H at 3600 MHz, using the portable build and the same 180-second f64 noise conversion. Each engine was warmed up, then timed in five alternating trials with Python subprocess wall-clock timing, including setup and file I/O.
 
 | Mode | Threads | Generic | AVX2 | AVX2 speedup |
 |---|---:|---:|---:|---:|
-| exact | 1 | 7.750 s | 2.468 s | 3.14× |
-| exact | 8 | 1.659 s | 1.086 s | 1.53× |
-| fast | 1 | 1.233 s | 0.764 s | 1.61× |
-| fast | 4 | 0.709 s | 0.590 s | 1.20× |
+| exact | 1 | 9.975 s | 2.957 s | 3.37× |
+| exact | 8 | 2.192 s | 1.298 s | 1.69× |
+| fast | 1 | 1.724 s | 0.909 s | 1.90× |
+| fast | 4 | 0.870 s | 0.602 s | 1.44× |
 
-AVX2 was faster in every paired trial. Outputs matched byte-for-byte in all four comparisons. Set `KBSRC_CPU=generic` to force the portable array backend; otherwise the binary selects AVX2 when supported. Raw trials: `bench/out/_speed/writer-f64-engines-3600mhz-20261013.json`.
+AVX2 was faster in every paired trial. Outputs matched byte-for-byte in all four comparisons. Set `KBSRC_CPU=generic` to force the portable array backend; otherwise the binary selects AVX2 when supported. Raw trials: `bench/out/_speed/engines-1.3.0-3600mhz-20261015.json`.
 
 ## How it works
 
