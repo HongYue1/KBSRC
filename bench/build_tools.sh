@@ -59,5 +59,5 @@ gcc $FLAGS -c -DFLOATING_POINT -DUSE_SSE -DUSE_SSE2 -DEXPORT= -I"$SPX/include" -
   "$SPX/libspeexdsp/resample.c" -o "$T/speex_resample.o"
 g++ $FLAGS -std=c++20 -ffp-contract=off -I"$P/include" -I"$SPX/include/speex" -I"$T/gen" -I../src \
   srcbench.cpp ../src/io/wav.cpp "$T/speex_resample.o" -L"$P/lib" -lsoxr -lsamplerate -o "$T/srcbench" -static
-g++ $FLAGS -std=c++20 -I../src gen_noise.cpp ../src/io/wav.cpp -o "$T/gen_noise" -static
+g++ $FLAGS -std=c++20 -ffp-contract=off -I../src gen_noise.cpp ../src/io/wav.cpp -o "$T/gen_noise" -static
 echo "tools ready in $T"

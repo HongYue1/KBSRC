@@ -1,6 +1,8 @@
 // Writes the timing input: 180 s of stereo pink-ish noise at 96 kHz, -20 dBFS RMS, 64-bit float.
-// Deterministic (fixed seed). A busy full-band signal avoids the denormal slowdowns that long digital
-// silence causes in some time-domain resamplers.
+// Fixed seed. build_tools.sh compiles it with -ffp-contract=off, so the -march flags cannot change the
+// samples through FMA contraction (std::normal_distribution and std::log still depend on the C++ and
+// C libraries). A busy full-band signal avoids the denormal slowdowns that long digital silence causes
+// in some time-domain resamplers.
 #include <cmath>
 #include <cstdio>
 #include <random>
